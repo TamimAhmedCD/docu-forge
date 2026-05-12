@@ -42,7 +42,7 @@ function GeneratePageContent() {
   const [generatedDocs, setGeneratedDocs] = useState<GeneratedDocument[]>([])
   const [outputFormat, setOutputFormat] = useState<'docx' | 'pdf'>('docx')
   const [showPreview, setShowPreview] = useState(false)
-  const [documentTexts, setDocumentTexts] = useState<Record<string, string>>({})
+  const [documentHtml, setDocumentHtml] = useState<Record<string, string>>({})
   const [previewTemplate, setPreviewTemplate] = useState<string | null>(null)
 
   useEffect(() => {
@@ -51,16 +51,17 @@ function GeneratePageContent() {
     }
   }, [templateId, templates])
 
-  // Extract document text when templates are selected
+  // Extract document HTML when templates are selected (for preview with formatting)
   useEffect(() => {
-    const extractTexts = async () => {
+    const extractHtml = async () => {
       for (const id of selectedTemplates) {
-        if (documentTexts[id]) continue
+        if (documentHtml[id]) continue
         const template = templates.find(t => t.id === id)
         if (template?.fileContent) {
           try {
-            const result = await mammoth.extractRawText({ arrayBuffer: template.fileContent })
-            setDocumentTexts(prev => ({ ...prev, [id]: result.value }))
+            // Use convertToHtml to preserve formatting
+            const result = await mammoth.convertToHtml({ arrayBuffer: template.fileContent })
+            setDocumentHtml(prev => ({ ...prev, [id]: result.value }))
           } catch {
             // Ignore extraction errors
           }
@@ -71,36 +72,41 @@ function GeneratePageContent() {
         setPreviewTemplate(selectedTemplates[0])
       }
     }
-    extractTexts()
-  }, [selectedTemplates, templates, documentTexts, previewTemplate])
+    extractHtml()
+  }, [selectedTemplates, templates, documentHtml, previewTemplate])
 
-  // Generate preview text with placeholders replaced
-  const previewText = useMemo(() => {
-    if (!previewTemplate || !documentTexts[previewTemplate]) return ''
+  // Generate preview HTML with placeholders replaced
+  const previewHtml = useMemo(() => {
+    if (!previewTemplate || !documentHtml[previewTemplate]) return ''
     
-    let text = documentTexts[previewTemplate]
+    let html = documentHtml[previewTemplate]
     const template = templates.find(t => t.id === previewTemplate)
     
     if (template) {
       template.placeholders.forEach(placeholder => {
         const value = formData[placeholder.id]
-        const stringValue = value instanceof Date 
+        const displayValue = value instanceof Date 
           ? value.toLocaleDateString() 
-          : String(value || `[${placeholder.label}]`)
+          : String(value || '')
         
-        // Replace all placeholder formats
+        // Show filled value or highlight unfilled placeholder
+        const replacement = displayValue 
+          ? `<span style="background-color: rgba(34, 197, 94, 0.2); padding: 0 2px; border-radius: 2px;">${displayValue}</span>`
+          : `<span style="background-color: rgba(239, 68, 68, 0.2); padding: 0 2px; border-radius: 2px; color: #ef4444;">[${placeholder.label}]</span>`
+        
+        // Replace all placeholder formats in HTML
         const patterns = [
-          new RegExp(`\\{\\{${placeholder.name}\\}\\}`, 'gi'),
+          new RegExp(`\\{\\{\\s*${placeholder.name}\\s*\\}\\}`, 'gi'),
           new RegExp(`\\[${placeholder.name}\\]`, 'gi'),
         ]
         patterns.forEach(pattern => {
-          text = text.replace(pattern, stringValue)
+          html = html.replace(pattern, replacement)
         })
       })
     }
     
-    return text
-  }, [previewTemplate, documentTexts, formData, templates])
+    return html
+  }, [previewTemplate, documentHtml, formData, templates])
 
   // Get all unique placeholders from selected templates
   const allPlaceholders = selectedTemplates.flatMap(id => {
@@ -413,11 +419,16 @@ function GeneratePageContent() {
                           </Select>
                         )}
                       </div>
-                      <div className="max-h-[400px] overflow-auto p-4">
-                        <div className="rounded-lg border border-border bg-muted/30 p-4">
-                          <pre className="whitespace-pre-wrap text-sm text-foreground font-sans leading-relaxed">
-                            {previewText || 'Loading preview...'}
-                          </pre>
+                      <div className="max-h-[500px] overflow-auto p-4">
+                        <div className="rounded-lg border border-border bg-white p-6 text-black">
+                          {previewHtml ? (
+                            <div 
+                              className="prose prose-sm max-w-none [&_p]:my-2 [&_h1]:text-xl [&_h1]:font-bold [&_h2]:text-lg [&_h2]:font-semibold [&_table]:border-collapse [&_td]:border [&_td]:border-gray-300 [&_td]:p-2 [&_th]:border [&_th]:border-gray-300 [&_th]:p-2 [&_th]:bg-gray-100 [&_img]:max-w-full"
+                              dangerouslySetInnerHTML={{ __html: previewHtml }}
+                            />
+                          ) : (
+                            <p className="text-muted-foreground">Loading preview...</p>
+                          )}
                         </div>
                       </div>
                     </motion.div>
