@@ -25,19 +25,21 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { useTemplates } from '@/hooks/use-templates'
+import { useFormStorage } from '@/hooks/use-form-storage'
 import { Template, FormData as FormDataType, GeneratedDocument } from '@/types'
 import { generateDocx, generatePdf, downloadDocument } from '@/lib/document-generator'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import mammoth from 'mammoth'
+import { Trash2 } from 'lucide-react'
 
 function GeneratePageContent() {
   const searchParams = useSearchParams()
   const templateId = searchParams.get('template')
   const { templates } = useTemplates()
+  const { formData, updateFormData, clearFormData, isLoaded } = useFormStorage()
   
   const [selectedTemplates, setSelectedTemplates] = useState<string[]>([])
-  const [formData, setFormData] = useState<FormDataType>({})
   const [isGenerating, setIsGenerating] = useState(false)
   const [generatedDocs, setGeneratedDocs] = useState<GeneratedDocument[]>([])
   const [outputFormat, setOutputFormat] = useState<'docx' | 'pdf'>('docx')
@@ -123,7 +125,12 @@ function GeneratePageContent() {
   }
 
   const handleInputChange = (id: string, value: string | number | Date) => {
-    setFormData(prev => ({ ...prev, [id]: value }))
+    updateFormData(id, value)
+  }
+
+  const handleClearForm = () => {
+    clearFormData()
+    toast.success('Form data cleared')
   }
 
   const handleGenerate = async () => {
@@ -305,14 +312,24 @@ function GeneratePageContent() {
                         {allPlaceholders.length} field{allPlaceholders.length !== 1 ? 's' : ''} to fill
                       </p>
                     </div>
-                    <Button
-                      variant={showPreview ? 'default' : 'outline'}
-                      size="sm"
-                      onClick={() => setShowPreview(!showPreview)}
-                    >
-                      <Eye className="mr-2 h-4 w-4" />
-                      {showPreview ? 'Hide Preview' : 'Show Preview'}
-                    </Button>
+                    <div className="flex gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={handleClearForm}
+                      >
+                        <Trash2 className="mr-2 h-4 w-4" />
+                        Clear Form
+                      </Button>
+                      <Button
+                        variant={showPreview ? 'default' : 'outline'}
+                        size="sm"
+                        onClick={() => setShowPreview(!showPreview)}
+                      >
+                        <Eye className="mr-2 h-4 w-4" />
+                        {showPreview ? 'Hide Preview' : 'Show Preview'}
+                      </Button>
+                    </div>
                   </div>
                   <div className="max-h-[400px] overflow-auto p-4">
                     <div className="space-y-4">
