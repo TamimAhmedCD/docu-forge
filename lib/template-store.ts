@@ -1,11 +1,14 @@
-'use client'
-
 import { Template, GeneratedDocument } from '@/types'
 
 // In-memory store for templates and generated documents
+// Using stable references for useSyncExternalStore compatibility
 let templates: Template[] = []
 let generatedDocuments: GeneratedDocument[] = []
 let listeners: Set<() => void> = new Set()
+
+// Server snapshot for SSR - empty array with stable reference
+const emptyTemplates: Template[] = []
+const emptyDocuments: GeneratedDocument[] = []
 
 function notifyListeners() {
   listeners.forEach(listener => listener())
@@ -16,8 +19,14 @@ export function subscribe(listener: () => void) {
   return () => listeners.delete(listener)
 }
 
+// Returns stable reference - the array itself, not a copy
 export function getTemplates(): Template[] {
-  return [...templates]
+  return templates
+}
+
+// Server snapshot returns empty array with stable reference
+export function getServerTemplates(): Template[] {
+  return emptyTemplates
 }
 
 export function getTemplate(id: string): Template | undefined {
@@ -41,8 +50,14 @@ export function removeTemplate(id: string): void {
   notifyListeners()
 }
 
+// Returns stable reference
 export function getGeneratedDocuments(): GeneratedDocument[] {
-  return [...generatedDocuments]
+  return generatedDocuments
+}
+
+// Server snapshot returns empty array with stable reference
+export function getServerGeneratedDocuments(): GeneratedDocument[] {
+  return emptyDocuments
 }
 
 export function addGeneratedDocument(doc: GeneratedDocument): void {

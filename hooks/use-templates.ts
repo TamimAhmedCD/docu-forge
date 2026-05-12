@@ -10,7 +10,7 @@ export function useTemplates() {
   const templates = useSyncExternalStore(
     store.subscribe,
     store.getTemplates,
-    store.getTemplates
+    store.getServerTemplates // Use server snapshot for SSR
   )
 
   const addTemplate = useCallback(async (file: File) => {
