@@ -2,16 +2,44 @@ import PizZip from 'pizzip'
 import { saveAs } from 'file-saver'
 import { Template, GeneratedDocument, FormData } from '@/types'
 
-// Replace placeholders directly in the XML content
+// Extract all text from <w:t> tags within a paragraph, preserving positions
+function extractTextWithPositions(xml: string): { text: string; segments: Array<{ start: number; end: number; tagStart: number; tagEnd: number }> } {
+  const textRegex = /<w:t[^>]*>([^<]*)<\/w:t>/g
+  let match
+  let text = ''
+  const segments: Array<{ start: number; end: number; tagStart: number; tagEnd: number }> = []
+  
+  while ((match = textRegex.exec(xml)) !== null) {
+    const content = match[1]
+    segments.push({
+      start: text.length,
+      end: text.length + content.length,
+      tagStart: match.index,
+      tagEnd: match.index + match[0].length
+    })
+    text += content
+  }
+  
+  return { text, segments }
+}
+
+// Replace placeholders in XML by working with the extracted text
 function replacePlaceholdersInXml(
   xmlContent: string,
   placeholders: Template['placeholders'],
   formData: FormData
 ): string {
-  let result = xmlContent
+  console.log('[v0] Starting placeholder replacement')
+  console.log('[v0] Placeholders:', placeholders.map(p => ({ id: p.id, name: p.name })))
+  console.log('[v0] Form data keys:', Object.keys(formData))
 
+  // First approach: simple text replacement within <w:t> tags
+  let result = xmlContent
+  
   placeholders.forEach(placeholder => {
     const value = formData[placeholder.id]
+    console.log('[v0] Processing placeholder:', placeholder.name, 'id:', placeholder.id, 'value:', value)
+    
     const stringValue = value instanceof Date 
       ? value.toLocaleDateString() 
       : String(value || '')
@@ -24,22 +52,58 @@ function replacePlaceholdersInXml(
       .replace(/"/g, '&quot;')
       .replace(/'/g, '&apos;')
 
-    // Replace {{placeholder}} format (may be split across XML tags)
-    // First try exact match
-    const exactCurlyPattern = new RegExp(`\\{\\{\\s*${escapeRegexString(placeholder.name)}\\s*\\}\\}`, 'gi')
-    result = result.replace(exactCurlyPattern, escapedValue)
+    // Try multiple placeholder formats
+    const patterns = [
+      // Exact {{name}} format
+      new RegExp(`\\{\\{\\s*${escapeRegexString(placeholder.name)}\\s*\\}\\}`, 'gi'),
+      // [NAME] format
+      new RegExp(`\\[${escapeRegexString(placeholder.name)}\\]`, 'gi'),
+      // {name} single brace format (some templates use this)
+      new RegExp(`\\{${escapeRegexString(placeholder.name)}\\}`, 'gi'),
+    ]
 
-    // Replace [PLACEHOLDER] format
-    const exactBracketPattern = new RegExp(`\\[${escapeRegexString(placeholder.name)}\\]`, 'gi')
-    result = result.replace(exactBracketPattern, escapedValue)
+    patterns.forEach((pattern, idx) => {
+      const matches = result.match(pattern)
+      if (matches && matches.length > 0) {
+        console.log('[v0] Pattern', idx, 'found', matches.length, 'matches for', placeholder.name)
+        result = result.replace(pattern, escapedValue)
+      }
+    })
+  })
 
-    // Handle cases where placeholder is split across XML tags (e.g., <w:t>{{</w:t><w:t>name</w:t><w:t>}}</w:t>)
-    // This regex finds placeholders that might be split across multiple <w:t> tags
-    const splitCurlyPattern = new RegExp(
-      `\\{(<[^>]*>)*\\s*\\{(<[^>]*>)*\\s*${escapeRegexString(placeholder.name)}(<[^>]*>)*\\s*\\}(<[^>]*>)*\\s*\\}`,
-      'gi'
-    )
-    result = result.replace(splitCurlyPattern, escapedValue)
+  // Second approach: handle Word's text splitting where {{ and name and }} are in separate <w:t> tags
+  // We need to find and reconstruct split placeholders
+  placeholders.forEach(placeholder => {
+    const value = formData[placeholder.id]
+    const stringValue = value instanceof Date 
+      ? value.toLocaleDateString() 
+      : String(value || '')
+    
+    const escapedValue = stringValue
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&apos;')
+
+    // Pattern to match placeholders split across XML tags
+    // This handles: <w:t>{{</w:t>...<w:t>name</w:t>...<w:t>}}</w:t>
+    // We match opening braces, then content with any XML in between, then closing braces
+    const splitPatterns = [
+      // {{ split from name split from }}
+      new RegExp(
+        `(\\{)(<\\/w:t>(?:<[^>]*>)*<w:t[^>]*>)?(\\{)(<\\/w:t>(?:<[^>]*>)*<w:t[^>]*>)?\\s*(${escapeRegexString(placeholder.name)})\\s*(<\\/w:t>(?:<[^>]*>)*<w:t[^>]*>)?(\\})(<\\/w:t>(?:<[^>]*>)*<w:t[^>]*>)?(\\})`,
+        'gi'
+      ),
+    ]
+
+    splitPatterns.forEach((pattern, idx) => {
+      const matches = result.match(pattern)
+      if (matches && matches.length > 0) {
+        console.log('[v0] Split pattern', idx, 'found', matches.length, 'matches for', placeholder.name)
+        result = result.replace(pattern, escapedValue)
+      }
+    })
   })
 
   return result
@@ -53,6 +117,11 @@ export async function generateDocx(
   template: Template,
   formData: FormData
 ): Promise<GeneratedDocument> {
+  console.log('[v0] generateDocx called')
+  console.log('[v0] Template:', template.name)
+  console.log('[v0] Template placeholders:', template.placeholders)
+  console.log('[v0] Form data received:', formData)
+  
   const zip = new PizZip(template.fileContent)
   
   // Get the document.xml content
@@ -63,8 +132,13 @@ export async function generateDocx(
   
   let xmlContent = documentXml.asText()
   
+  // Log a sample of the XML to see placeholder format
+  console.log('[v0] XML sample (first 2000 chars):', xmlContent.substring(0, 2000))
+  
   // Replace placeholders in the XML
   xmlContent = replacePlaceholdersInXml(xmlContent, template.placeholders, formData)
+  
+  console.log('[v0] XML after replacement (first 2000 chars):', xmlContent.substring(0, 2000))
   
   // Update the zip with modified content
   zip.file('word/document.xml', xmlContent)
