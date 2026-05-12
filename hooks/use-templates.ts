@@ -23,7 +23,7 @@ export function useTemplates() {
     const template: Template = {
       id: crypto.randomUUID(),
       name: file.name,
-      file,
+      file: new File([fileContent], file.name, { type: file.type }),
       fileContent,
       placeholders,
       createdAt: new Date(),
