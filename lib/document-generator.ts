@@ -10,11 +10,6 @@ export async function generateDocx(
 ): Promise<GeneratedDocument> {
   const zip = new PizZip(template.fileContent)
   
-  const doc = new Docxtemplater(zip, {
-    paragraphLoop: true,
-    linebreaks: true,
-  })
-
   // Create data object with both formats
   const data: Record<string, string> = {}
   template.placeholders.forEach(placeholder => {
@@ -29,7 +24,13 @@ export async function generateDocx(
     data[placeholder.name.toLowerCase()] = stringValue
   })
 
-  doc.setData(data)
+  // Use the new API - pass data in constructor options
+  const doc = new Docxtemplater(zip, {
+    paragraphLoop: true,
+    linebreaks: true,
+    data: data,
+  })
+
   doc.render()
 
   const output = doc.getZip().generate({
@@ -57,11 +58,6 @@ export async function generatePdf(
   // First generate the DOCX with replaced content
   const zip = new PizZip(template.fileContent)
   
-  const doc = new Docxtemplater(zip, {
-    paragraphLoop: true,
-    linebreaks: true,
-  })
-
   const data: Record<string, string> = {}
   template.placeholders.forEach(placeholder => {
     const value = formData[placeholder.id]
@@ -74,76 +70,111 @@ export async function generatePdf(
     data[placeholder.name.toLowerCase()] = stringValue
   })
 
-  doc.setData(data)
+  // Use the new API - pass data in constructor options
+  const doc = new Docxtemplater(zip, {
+    paragraphLoop: true,
+    linebreaks: true,
+    data: data,
+  })
+
   doc.render()
 
-  // For PDF, we'll create a simple text-based PDF
-  // Note: Full DOCX to PDF conversion requires server-side processing
+  // Get the rendered document text
+  const renderedZip = doc.getZip()
+  const renderedBlob = renderedZip.generate({ type: 'arraybuffer' })
+  
+  // Extract text from rendered DOCX using mammoth
+  const mammoth = await import('mammoth')
+  const { value: renderedText } = await mammoth.default.extractRawText({ arrayBuffer: renderedBlob })
+
+  // Create PDF with the actual document content
   const pdfDoc = await PDFDocument.create()
-  const page = pdfDoc.addPage([612, 792]) // Letter size
   const font = await pdfDoc.embedFont(StandardFonts.Helvetica)
   const boldFont = await pdfDoc.embedFont(StandardFonts.HelveticaBold)
 
-  const { width, height } = page.getSize()
+  const pageWidth = 612
+  const pageHeight = 792
   const margin = 50
-  let yPosition = height - margin
+  const maxWidth = pageWidth - (margin * 2)
+  const lineHeight = 14
+  const fontSize = 11
+
+  let currentPage = pdfDoc.addPage([pageWidth, pageHeight])
+  let yPosition = pageHeight - margin
 
   // Title
-  page.drawText(template.name.replace(/\.[^/.]+$/, ''), {
+  currentPage.drawText(template.name.replace(/\.[^/.]+$/, ''), {
     x: margin,
     y: yPosition,
-    size: 18,
+    size: 16,
     font: boldFont,
     color: rgb(0, 0, 0),
   })
-  yPosition -= 40
-
-  // Generated content
-  page.drawText('Generated Document', {
-    x: margin,
-    y: yPosition,
-    size: 12,
-    font: font,
-    color: rgb(0.3, 0.3, 0.3),
-  })
   yPosition -= 30
 
-  // Form data
-  template.placeholders.forEach(placeholder => {
-    const value = formData[placeholder.id]
-    const stringValue = value instanceof Date 
-      ? value.toLocaleDateString() 
-      : String(value || '')
-
-    if (yPosition < margin + 40) {
-      // Add new page if needed
-      const newPage = pdfDoc.addPage([612, 792])
-      yPosition = height - margin
+  // Split text into lines and paragraphs
+  const paragraphs = renderedText.split('\n')
+  
+  for (const paragraph of paragraphs) {
+    if (!paragraph.trim()) {
+      yPosition -= lineHeight
+      continue
     }
 
-    page.drawText(`${placeholder.label}:`, {
-      x: margin,
-      y: yPosition,
-      size: 10,
-      font: boldFont,
-      color: rgb(0, 0, 0),
-    })
-    yPosition -= 15
+    // Word wrap
+    const words = paragraph.split(' ')
+    let currentLine = ''
+    
+    for (const word of words) {
+      const testLine = currentLine ? `${currentLine} ${word}` : word
+      const textWidth = font.widthOfTextAtSize(testLine, fontSize)
+      
+      if (textWidth > maxWidth && currentLine) {
+        // Check if we need a new page
+        if (yPosition < margin + lineHeight) {
+          currentPage = pdfDoc.addPage([pageWidth, pageHeight])
+          yPosition = pageHeight - margin
+        }
+        
+        currentPage.drawText(currentLine, {
+          x: margin,
+          y: yPosition,
+          size: fontSize,
+          font: font,
+          color: rgb(0.1, 0.1, 0.1),
+        })
+        yPosition -= lineHeight
+        currentLine = word
+      } else {
+        currentLine = testLine
+      }
+    }
+    
+    // Draw remaining text
+    if (currentLine) {
+      if (yPosition < margin + lineHeight) {
+        currentPage = pdfDoc.addPage([pageWidth, pageHeight])
+        yPosition = pageHeight - margin
+      }
+      
+      currentPage.drawText(currentLine, {
+        x: margin,
+        y: yPosition,
+        size: fontSize,
+        font: font,
+        color: rgb(0.1, 0.1, 0.1),
+      })
+      yPosition -= lineHeight
+    }
+    
+    // Add paragraph spacing
+    yPosition -= 4
+  }
 
-    page.drawText(stringValue || 'N/A', {
-      x: margin,
-      y: yPosition,
-      size: 10,
-      font: font,
-      color: rgb(0.2, 0.2, 0.2),
-    })
-    yPosition -= 25
-  })
-
-  // Footer
-  page.drawText(`Generated on ${new Date().toLocaleDateString()}`, {
+  // Footer on last page
+  currentPage.drawText(`Generated on ${new Date().toLocaleDateString()}`, {
     x: margin,
-    y: margin,
+    y: 30,
     size: 8,
     font: font,
     color: rgb(0.5, 0.5, 0.5),
