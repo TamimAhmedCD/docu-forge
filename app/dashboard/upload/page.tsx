@@ -1,9 +1,8 @@
 'use client'
 
 import { useState, useCallback } from 'react'
-import { useRouter } from 'next/navigation'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Upload, FileText, X, Check, AlertCircle, ArrowRight } from 'lucide-react'
+import { Upload, FileText, Check, AlertCircle, ArrowRight } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useTemplates } from '@/hooks/use-templates'
 import { toast } from 'sonner'
@@ -15,10 +14,10 @@ interface UploadedFile {
   status: 'pending' | 'uploading' | 'success' | 'error'
   error?: string
   templateId?: string
+  uniqueId?: string
 }
 
 export default function UploadPage() {
-  const router = useRouter()
   const { addTemplate } = useTemplates()
   const [files, setFiles] = useState<UploadedFile[]>([])
   const [isDragging, setIsDragging] = useState(false)
@@ -33,75 +32,78 @@ export default function UploadPage() {
     setIsDragging(false)
   }, [])
 
+  const processFiles = useCallback(async (newFiles: File[]) => {
+    if (newFiles.length === 0) return
+    
+    // Create unique IDs for tracking
+    const uploadedFiles: UploadedFile[] = newFiles.map((file) => ({
+      file,
+      status: 'pending' as const,
+      uniqueId: `${file.name}-${Date.now()}-${Math.random()}`,
+    }))
+    
+    setFiles((prev) => [...prev, ...uploadedFiles])
+    
+    // Process files immediately
+    let successCount = 0
+    
+    for (const uploadedFile of uploadedFiles) {
+      // Update to uploading status
+      setFiles((prev) =>
+        prev.map((f) =>
+          f.uniqueId === uploadedFile.uniqueId
+            ? { ...f, status: 'uploading' as const }
+            : f
+        )
+      )
+
+      try {
+        const template = await addTemplate(uploadedFile.file)
+        setFiles((prev) =>
+          prev.map((f) =>
+            f.uniqueId === uploadedFile.uniqueId
+              ? { ...f, status: 'success' as const, templateId: template.id }
+              : f
+          )
+        )
+        successCount++
+      } catch {
+        setFiles((prev) =>
+          prev.map((f) =>
+            f.uniqueId === uploadedFile.uniqueId
+              ? { ...f, status: 'error' as const, error: 'Failed to process file' }
+              : f
+          )
+        )
+      }
+    }
+    
+    if (successCount > 0) {
+      toast.success(`${successCount} template${successCount > 1 ? 's' : ''} uploaded successfully`)
+    }
+  }, [addTemplate])
+
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault()
     setIsDragging(false)
     const droppedFiles = Array.from(e.dataTransfer.files).filter(
       (file) => file.name.endsWith('.docx') || file.name.endsWith('.doc')
     )
-    addFiles(droppedFiles)
-  }, [])
+    processFiles(droppedFiles)
+  }, [processFiles])
 
   const handleFileSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
       const selectedFiles = Array.from(e.target.files).filter(
         (file) => file.name.endsWith('.docx') || file.name.endsWith('.doc')
       )
-      addFiles(selectedFiles)
+      processFiles(selectedFiles)
     }
-  }, [])
-
-  const addFiles = (newFiles: File[]) => {
-    const uploadedFiles: UploadedFile[] = newFiles.map((file) => ({
-      file,
-      status: 'pending',
-    }))
-    setFiles((prev) => [...prev, ...uploadedFiles])
-  }
-
-  const removeFile = (index: number) => {
-    setFiles((prev) => prev.filter((_, i) => i !== index))
-  }
-
-  const processFiles = async () => {
-    const pendingFiles = files.filter((f) => f.status === 'pending')
-    
-    for (let i = 0; i < files.length; i++) {
-      if (files[i].status !== 'pending') continue
-
-      setFiles((prev) =>
-        prev.map((f, idx) =>
-          idx === i ? { ...f, status: 'uploading' } : f
-        )
-      )
-
-      try {
-        const template = await addTemplate(files[i].file)
-        setFiles((prev) =>
-          prev.map((f, idx) =>
-            idx === i ? { ...f, status: 'success', templateId: template.id } : f
-          )
-        )
-      } catch (error) {
-        setFiles((prev) =>
-          prev.map((f, idx) =>
-            idx === i
-              ? { ...f, status: 'error', error: 'Failed to process file' }
-              : f
-          )
-        )
-      }
-    }
-
-    const successCount = files.filter((f) => f.status === 'success').length + pendingFiles.length
-    if (successCount > 0) {
-      toast.success(`${successCount} template${successCount > 1 ? 's' : ''} uploaded successfully`)
-    }
-  }
+  }, [processFiles])
 
   const allProcessed = files.length > 0 && files.every((f) => f.status === 'success' || f.status === 'error')
   const hasSuccess = files.some((f) => f.status === 'success')
-  const hasPending = files.some((f) => f.status === 'pending')
+  const isProcessing = files.some((f) => f.status === 'uploading')
 
   return (
     <div className="p-6 lg:p-8">
@@ -170,11 +172,8 @@ export default function UploadPage() {
               <h2 className="text-lg font-semibold text-foreground">
                 Files ({files.length})
               </h2>
-              {hasPending && (
-                <Button onClick={processFiles}>
-                  Process Files
-                  <ArrowRight className="ml-2 h-4 w-4" />
-                </Button>
+              {isProcessing && (
+                <span className="text-sm text-muted-foreground">Processing...</span>
               )}
             </div>
 
@@ -199,10 +198,7 @@ export default function UploadPage() {
                     </p>
                   </div>
                   <div className="flex items-center gap-2">
-                    {file.status === 'pending' && (
-                      <span className="text-sm text-muted-foreground">Pending</span>
-                    )}
-                    {file.status === 'uploading' && (
+                    {(file.status === 'pending' || file.status === 'uploading') && (
                       <div className="h-5 w-5 animate-spin rounded-full border-2 border-primary border-t-transparent" />
                     )}
                     {file.status === 'success' && (
@@ -215,16 +211,6 @@ export default function UploadPage() {
                         <AlertCircle className="h-5 w-5 text-destructive" />
                         <span className="text-sm text-destructive">{file.error}</span>
                       </div>
-                    )}
-                    {file.status === 'pending' && (
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => removeFile(index)}
-                        className="h-8 w-8"
-                      >
-                        <X className="h-4 w-4" />
-                      </Button>
                     )}
                   </div>
                 </motion.div>
