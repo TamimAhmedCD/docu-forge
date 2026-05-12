@@ -24,14 +24,13 @@ export async function generateDocx(
     data[placeholder.name.toLowerCase()] = stringValue
   })
 
-  // Use the new API - pass data in constructor options
   const doc = new Docxtemplater(zip, {
     paragraphLoop: true,
     linebreaks: true,
-    data: data,
   })
 
-  doc.render()
+  // Render with data
+  doc.render(data)
 
   const output = doc.getZip().generate({
     type: 'blob',
@@ -70,14 +69,13 @@ export async function generatePdf(
     data[placeholder.name.toLowerCase()] = stringValue
   })
 
-  // Use the new API - pass data in constructor options
   const doc = new Docxtemplater(zip, {
     paragraphLoop: true,
     linebreaks: true,
-    data: data,
   })
 
-  doc.render()
+  // Render with data
+  doc.render(data)
 
   // Get the rendered document text
   const renderedZip = doc.getZip()
