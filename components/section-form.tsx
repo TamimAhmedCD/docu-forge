@@ -6,10 +6,7 @@ import {
   DndContext,
   DragOverlay,
   closestCenter,
-  closestCorners,
   pointerWithin,
-  rectIntersection,
-  getFirstCollision,
   KeyboardSensor,
   PointerSensor,
   TouchSensor,
@@ -111,17 +108,9 @@ interface DragData {
   placeholderId?: string
 }
 
-// Droppable Section Content Wrapper - makes the entire section content area a valid drop target
-function DroppableSectionContent({ 
-  sectionId, 
-  children,
-  isEmpty 
-}: { 
-  sectionId: string
-  children: React.ReactNode
-  isEmpty?: boolean
-}) {
-  const { setNodeRef, isOver, active } = useDroppable({
+// Droppable Empty Section - only used when section has no fields
+function DroppableEmptySection({ sectionId }: { sectionId: string }) {
+  const { setNodeRef, isOver } = useDroppable({
     id: `section-drop-${sectionId}`,
     data: {
       type: 'section' as DragItemType,
@@ -129,35 +118,16 @@ function DroppableSectionContent({
     },
   })
 
-  // Check if we're dragging a placeholder
-  const isDraggingPlaceholder = active?.data.current?.type === 'placeholder'
-
-  if (isEmpty) {
-    return (
-      <div 
-        ref={setNodeRef}
-        className={cn(
-          "text-center py-10 text-muted-foreground border-2 border-dashed rounded-lg transition-all duration-200",
-          isOver ? "border-primary bg-primary/10 scale-[1.01]" : "border-border",
-          isDraggingPlaceholder && !isOver && "border-primary/50"
-        )}
-      >
-        <p>No fields in this section</p>
-        <p className="text-sm">Drag fields here to add them</p>
-      </div>
-    )
-  }
-
   return (
     <div 
       ref={setNodeRef}
       className={cn(
-        "rounded-lg transition-all duration-200 min-h-[60px]",
-        isOver && "ring-2 ring-primary/50 bg-primary/5 scale-[1.005]",
-        isDraggingPlaceholder && !isOver && "ring-1 ring-primary/20"
+        "text-center py-10 text-muted-foreground border-2 border-dashed rounded-lg transition-all duration-200",
+        isOver ? "border-primary bg-primary/10" : "border-border"
       )}
     >
-      {children}
+      <p>No fields in this section</p>
+      <p className="text-sm">Drag fields here to add them</p>
     </div>
   )
 }
@@ -231,9 +201,10 @@ function SortableField({
         <div
           {...attributes}
           {...listeners}
-          className="cursor-grab active:cursor-grabbing p-0.5 rounded hover:bg-muted transition-colors touch-none opacity-50 group-hover:opacity-100"
+          className="cursor-grab active:cursor-grabbing p-1 -m-1 rounded hover:bg-muted transition-colors touch-none"
+          style={{ touchAction: 'none' }}
         >
-          <GripVertical className="h-3.5 w-3.5 text-muted-foreground" />
+          <GripVertical className="h-4 w-4 text-muted-foreground" />
         </div>
         <Label htmlFor={placeholder.id} className="flex-1 text-sm font-medium truncate flex items-center gap-1.5">
           {placeholder.label}
@@ -497,10 +468,9 @@ function SortableSection({
             className="overflow-hidden"
           >
             <div className="p-4 min-h-[80px]">
-              <DroppableSectionContent 
-                sectionId={section.id} 
-                isEmpty={sectionPlaceholders.length === 0}
-              >
+              {sectionPlaceholders.length === 0 ? (
+                <DroppableEmptySection sectionId={section.id} />
+              ) : (
                 <SortableContext items={placeholderIds} strategy={verticalListSortingStrategy}>
                   <div className="grid grid-cols-6 gap-3">
                     {sectionPlaceholders.map((placeholder) => (
@@ -516,7 +486,7 @@ function SortableSection({
                     ))}
                   </div>
                 </SortableContext>
-              </DroppableSectionContent>
+              )}
             </div>
           </motion.div>
         )}
@@ -613,20 +583,18 @@ export function SectionForm({
     })
   )
 
-  // Custom collision detection - prioritizes placeholders for reordering, sections for cross-section moves
+  // Simple collision detection - use closestCenter for reordering, with pointerWithin for empty sections
   const customCollisionDetection: CollisionDetection = useCallback((args) => {
-    // First check pointer collisions (most accurate)
-    const pointerCollisions = pointerWithin(args)
+    // Use closestCenter as primary - it's the best for sortable lists
+    const closestCollisions = closestCenter(args)
     
-    // PRIORITY 1: Placeholder collisions (for field-to-field reordering)
-    const placeholderCollision = pointerCollisions.find(
-      collision => String(collision.id).startsWith('placeholder-')
-    )
-    if (placeholderCollision) {
-      return [placeholderCollision]
+    // If we found a collision, use it
+    if (closestCollisions.length > 0) {
+      return closestCollisions
     }
 
-    // PRIORITY 2: Section drop zones (for moving to different/empty sections)
+    // Fall back to pointerWithin for empty section drops
+    const pointerCollisions = pointerWithin(args)
     const sectionDropZone = pointerCollisions.find(
       collision => String(collision.id).startsWith('section-drop-')
     )
@@ -634,35 +602,7 @@ export function SectionForm({
       return [sectionDropZone]
     }
 
-    // PRIORITY 3: Section headers (for section reordering)
-    const sectionCollision = pointerCollisions.find(
-      collision => String(collision.id).startsWith('section-')
-    )
-    if (sectionCollision) {
-      return [sectionCollision]
-    }
-
-    // Fall back to rect intersection
-    const rectCollisions = rectIntersection(args)
-    
-    // Check placeholders first in rect collisions
-    const placeholderRectCollision = rectCollisions.find(
-      collision => String(collision.id).startsWith('placeholder-')
-    )
-    if (placeholderRectCollision) {
-      return [placeholderRectCollision]
-    }
-
-    // Then section drop zones
-    const sectionRectCollision = rectCollisions.find(
-      collision => String(collision.id).startsWith('section-drop-')
-    )
-    if (sectionRectCollision) {
-      return [sectionRectCollision]
-    }
-
-    // Use closest center for final fallback (better for reordering)
-    return closestCenter(args)
+    return closestCollisions
   }, [])
 
   // Filter placeholders by search query
@@ -736,6 +676,7 @@ export function SectionForm({
 
   const handleDragStart = (event: DragStartEvent) => {
     const { active } = event
+    console.log("[v0] Drag started:", { id: active.id, data: active.data.current })
     setActiveId(active.id)
     
     const data = active.data.current as DragData | undefined
@@ -745,6 +686,7 @@ export function SectionForm({
 
   const handleDragOver = (event: DragOverEvent) => {
     const { active, over } = event
+    console.log("[v0] Drag over:", { activeId: active.id, overId: over?.id, overData: over?.data.current })
     if (!over) return
 
     const activeData = active.data.current as DragData | undefined
@@ -795,6 +737,7 @@ export function SectionForm({
 
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event
+    console.log("[v0] Drag end:", { activeId: active.id, overId: over?.id, overData: over?.data.current })
     setActiveId(null)
     setActiveType(null)
 
@@ -1004,8 +947,12 @@ export function SectionForm({
         measuring={{
           droppable: {
             strategy: MeasuringStrategy.Always,
-            frequency: MeasuringStrategy.WhileDragging,
           },
+        }}
+        autoScroll={{
+          enabled: true,
+          threshold: { x: 0, y: 0.2 },
+          acceleration: 10,
         }}
       >
         <SortableContext items={sectionIds} strategy={verticalListSortingStrategy}>
