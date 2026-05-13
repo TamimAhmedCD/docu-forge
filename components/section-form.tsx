@@ -1,7 +1,32 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useRef, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
+import {
+  DndContext,
+  DragOverlay,
+  closestCenter,
+  closestCorners,
+  KeyboardSensor,
+  PointerSensor,
+  TouchSensor,
+  useSensor,
+  useSensors,
+  DragStartEvent,
+  DragEndEvent,
+  DragOverEvent,
+  UniqueIdentifier,
+  MeasuringStrategy,
+} from '@dnd-kit/core'
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
+import { restrictToVerticalAxis, restrictToWindowEdges } from '@dnd-kit/modifiers'
 import {
   ChevronDown,
   ChevronRight,
@@ -14,6 +39,7 @@ import {
   Search,
   Settings2,
   RotateCcw,
+  Undo2,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -65,6 +91,383 @@ interface SectionFormProps {
   onAutoGroupedChange: (value: boolean) => void
 }
 
+// Types for drag items
+type DragItemType = 'placeholder' | 'section'
+interface DragData {
+  type: DragItemType
+  sectionId?: string
+  placeholderId?: string
+}
+
+// Sortable Field Component
+function SortableField({
+  placeholder,
+  sectionId,
+  formData,
+  onFormDataChange,
+  isDragging,
+}: {
+  placeholder: Placeholder
+  sectionId: string
+  formData: FormDataType
+  onFormDataChange: (id: string, value: string | number | Date) => void
+  isDragging?: boolean
+}) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging: isSortableDragging,
+  } = useSortable({
+    id: `placeholder-${placeholder.id}`,
+    data: {
+      type: 'placeholder' as DragItemType,
+      sectionId,
+      placeholderId: placeholder.id,
+    },
+  })
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+  }
+
+  const value = formData[placeholder.id]
+  const isFilled = value !== undefined && value !== null && value !== ''
+
+  if (isSortableDragging || isDragging) {
+    return (
+      <div
+        ref={setNodeRef}
+        style={style}
+        className="rounded-lg border-2 border-dashed border-primary/50 bg-primary/5 p-4 h-24"
+      />
+    )
+  }
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className={cn(
+        'group relative rounded-lg border border-border bg-card p-4 transition-all',
+        isFilled && 'border-primary/30 bg-primary/5'
+      )}
+    >
+      <div
+        {...attributes}
+        {...listeners}
+        className="absolute left-2 top-1/2 -translate-y-1/2 cursor-grab active:cursor-grabbing p-1 rounded hover:bg-muted transition-colors touch-none"
+      >
+        <GripVertical className="h-4 w-4 text-muted-foreground" />
+      </div>
+      <div className="pl-6 space-y-2">
+        <Label htmlFor={placeholder.id} className="flex items-center gap-2">
+          {placeholder.label}
+          {placeholder.required && (
+            <span className="text-destructive">*</span>
+          )}
+          {placeholder.syncStatus === 'new' && (
+            <Badge variant="outline" className="bg-blue-500/10 text-blue-600 border-blue-500/20 text-xs">
+              New
+            </Badge>
+          )}
+        </Label>
+        {placeholder.type === 'textarea' ? (
+          <Textarea
+            id={placeholder.id}
+            value={(value as string) || ''}
+            onChange={(e) => onFormDataChange(placeholder.id, e.target.value)}
+            placeholder={`Enter ${placeholder.label.toLowerCase()}`}
+            rows={3}
+            className="resize-none"
+          />
+        ) : placeholder.type === 'select' ? (
+          <Select
+            value={(value as string) || ''}
+            onValueChange={(v) => onFormDataChange(placeholder.id, v)}
+          >
+            <SelectTrigger>
+              <SelectValue placeholder={`Select ${placeholder.label.toLowerCase()}`} />
+            </SelectTrigger>
+            <SelectContent>
+              {placeholder.options?.map((option) => (
+                <SelectItem key={option} value={option}>
+                  {option}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        ) : (
+          <Input
+            id={placeholder.id}
+            type={
+              placeholder.type === 'number' ? 'number' :
+              placeholder.type === 'date' ? 'date' :
+              placeholder.type === 'email' ? 'email' : 'text'
+            }
+            value={(value as string) || ''}
+            onChange={(e) => onFormDataChange(placeholder.id, e.target.value)}
+            placeholder={`Enter ${placeholder.label.toLowerCase()}`}
+          />
+        )}
+      </div>
+    </div>
+  )
+}
+
+// Sortable Section Component
+function SortableSection({
+  section,
+  placeholders,
+  formData,
+  onFormDataChange,
+  onToggleSection,
+  onEditSection,
+  onDeleteSection,
+  editingSectionId,
+  editingSectionName,
+  setEditingSectionName,
+  onSaveEditSection,
+  onCancelEditSection,
+  isDragOverlay,
+  activePlaceholderId,
+}: {
+  section: FormSection
+  placeholders: Placeholder[]
+  formData: FormDataType
+  onFormDataChange: (id: string, value: string | number | Date) => void
+  onToggleSection: (sectionId: string) => void
+  onEditSection: (section: FormSection) => void
+  onDeleteSection: (sectionId: string) => void
+  editingSectionId: string | null
+  editingSectionName: string
+  setEditingSectionName: (name: string) => void
+  onSaveEditSection: () => void
+  onCancelEditSection: () => void
+  isDragOverlay?: boolean
+  activePlaceholderId?: string | null
+}) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({
+    id: `section-${section.id}`,
+    data: {
+      type: 'section' as DragItemType,
+      sectionId: section.id,
+    },
+  })
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+  }
+
+  const progress = getSectionProgress(section, placeholders, formData)
+  const sectionPlaceholders = section.placeholderIds
+    .map(id => placeholders.find(p => p.id === id))
+    .filter(Boolean) as Placeholder[]
+
+  const placeholderIds = sectionPlaceholders.map(p => `placeholder-${p.id}`)
+
+  if (isDragging && !isDragOverlay) {
+    return (
+      <div
+        ref={setNodeRef}
+        style={style}
+        className="rounded-xl border-2 border-dashed border-primary/50 bg-primary/5 h-20"
+      />
+    )
+  }
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className={cn(
+        'rounded-xl border border-border bg-card overflow-hidden',
+        isDragOverlay && 'shadow-2xl ring-2 ring-primary/50'
+      )}
+    >
+      {/* Section Header */}
+      <div
+        className={cn(
+          'flex items-center gap-3 p-4 cursor-pointer hover:bg-muted/50 transition-colors',
+          section.isExpanded && 'border-b border-border'
+        )}
+      >
+        {/* Section Drag Handle */}
+        <div
+          {...attributes}
+          {...listeners}
+          className="cursor-grab active:cursor-grabbing p-1 rounded hover:bg-muted transition-colors touch-none"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <GripVertical className="h-5 w-5 text-muted-foreground" />
+        </div>
+
+        <div className="flex-1 flex items-center gap-3" onClick={() => onToggleSection(section.id)}>
+          {section.isExpanded ? (
+            <ChevronDown className="h-5 w-5 text-muted-foreground shrink-0" />
+          ) : (
+            <ChevronRight className="h-5 w-5 text-muted-foreground shrink-0" />
+          )}
+          
+          {editingSectionId === section.id ? (
+            <div className="flex items-center gap-2 flex-1" onClick={(e) => e.stopPropagation()}>
+              <Input
+                value={editingSectionName}
+                onChange={(e) => setEditingSectionName(e.target.value)}
+                className="h-8"
+                autoFocus
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') onSaveEditSection()
+                  if (e.key === 'Escape') onCancelEditSection()
+                }}
+              />
+              <Button size="icon" variant="ghost" className="h-8 w-8" onClick={onSaveEditSection}>
+                <Check className="h-4 w-4" />
+              </Button>
+              <Button size="icon" variant="ghost" className="h-8 w-8" onClick={onCancelEditSection}>
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+          ) : (
+            <>
+              <div className="flex-1 min-w-0">
+                <h3 className="font-semibold text-foreground truncate">{section.name}</h3>
+                <p className="text-xs text-muted-foreground">
+                  {progress.filled}/{progress.total} fields completed
+                </p>
+              </div>
+              <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+                <div className="w-20">
+                  <Progress value={progress.percentage} className="h-1.5" />
+                </div>
+                <span className="text-xs text-muted-foreground w-10 text-right">
+                  {progress.percentage}%
+                </span>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button size="icon" variant="ghost" className="h-8 w-8">
+                      <Settings2 className="h-4 w-4" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem onClick={() => onEditSection(section)}>
+                      <Pencil className="mr-2 h-4 w-4" />
+                      Rename
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem
+                      onClick={() => onDeleteSection(section.id)}
+                      className="text-destructive"
+                    >
+                      <Trash2 className="mr-2 h-4 w-4" />
+                      Delete
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+
+      {/* Section Content */}
+      <AnimatePresence>
+        {section.isExpanded && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            className="overflow-hidden"
+          >
+            <div className="p-4 space-y-3 min-h-[80px]">
+              {sectionPlaceholders.length === 0 ? (
+                <div className="text-center py-8 text-muted-foreground border-2 border-dashed border-border rounded-lg">
+                  <p>No fields in this section</p>
+                  <p className="text-sm">Drag fields here to add them</p>
+                </div>
+              ) : (
+                <SortableContext items={placeholderIds} strategy={verticalListSortingStrategy}>
+                  {sectionPlaceholders.map((placeholder) => (
+                    <SortableField
+                      key={placeholder.id}
+                      placeholder={placeholder}
+                      sectionId={section.id}
+                      formData={formData}
+                      onFormDataChange={onFormDataChange}
+                      isDragging={activePlaceholderId === placeholder.id}
+                    />
+                  ))}
+                </SortableContext>
+              )}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  )
+}
+
+// Field Drag Overlay Component
+function FieldDragOverlay({ placeholder, formData }: { placeholder: Placeholder; formData: FormDataType }) {
+  const value = formData[placeholder.id]
+  const isFilled = value !== undefined && value !== null && value !== ''
+
+  return (
+    <div
+      className={cn(
+        'rounded-lg border-2 border-primary bg-card p-4 shadow-2xl w-full max-w-md',
+        isFilled && 'border-primary bg-primary/5'
+      )}
+    >
+      <div className="flex items-center gap-2">
+        <GripVertical className="h-4 w-4 text-primary" />
+        <Label className="flex items-center gap-2">
+          {placeholder.label}
+          {placeholder.required && (
+            <span className="text-destructive">*</span>
+          )}
+        </Label>
+      </div>
+    </div>
+  )
+}
+
+// Section Drag Overlay Component
+function SectionDragOverlay({ section, placeholders, formData }: { 
+  section: FormSection
+  placeholders: Placeholder[]
+  formData: FormDataType 
+}) {
+  const progress = getSectionProgress(section, placeholders, formData)
+
+  return (
+    <div className="rounded-xl border-2 border-primary bg-card shadow-2xl overflow-hidden w-full max-w-2xl">
+      <div className="flex items-center gap-3 p-4">
+        <GripVertical className="h-5 w-5 text-primary" />
+        <ChevronRight className="h-5 w-5 text-muted-foreground shrink-0" />
+        <div className="flex-1 min-w-0">
+          <h3 className="font-semibold text-foreground truncate">{section.name}</h3>
+          <p className="text-xs text-muted-foreground">
+            {progress.filled}/{progress.total} fields
+          </p>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export function SectionForm({
   sections,
   placeholders,
@@ -80,7 +483,28 @@ export function SectionForm({
   const [showAddSection, setShowAddSection] = useState(false)
   const [newSectionName, setNewSectionName] = useState('')
   const [deleteConfirm, setDeleteConfirm] = useState<{ sectionId: string; moveTo: string } | null>(null)
-  const [draggedPlaceholder, setDraggedPlaceholder] = useState<{ id: string; sectionId: string } | null>(null)
+  const [activeId, setActiveId] = useState<UniqueIdentifier | null>(null)
+  const [activeType, setActiveType] = useState<DragItemType | null>(null)
+  const [history, setHistory] = useState<FormSection[][]>([])
+  const containerRef = useRef<HTMLDivElement>(null)
+
+  // Configure sensors with touch support
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 8,
+      },
+    }),
+    useSensor(TouchSensor, {
+      activationConstraint: {
+        delay: 200,
+        tolerance: 5,
+      },
+    }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  )
 
   // Filter placeholders by search query
   const filteredSections = useMemo(() => {
@@ -112,6 +536,133 @@ export function SectionForm({
     }
   }, [placeholders, formData])
 
+  // Save to history for undo
+  const saveToHistory = useCallback(() => {
+    setHistory(prev => [...prev.slice(-9), JSON.parse(JSON.stringify(sections))])
+  }, [sections])
+
+  // Undo last move
+  const handleUndo = useCallback(() => {
+    if (history.length > 0) {
+      const previousState = history[history.length - 1]
+      setHistory(prev => prev.slice(0, -1))
+      onSectionsChange(previousState)
+    }
+  }, [history, onSectionsChange])
+
+  // Get active item for drag overlay
+  const activeItem = useMemo(() => {
+    if (!activeId) return null
+
+    const idStr = String(activeId)
+    
+    if (idStr.startsWith('placeholder-')) {
+      const placeholderId = idStr.replace('placeholder-', '')
+      return {
+        type: 'placeholder' as const,
+        placeholder: placeholders.find(p => p.id === placeholderId),
+      }
+    }
+    
+    if (idStr.startsWith('section-')) {
+      const sectionId = idStr.replace('section-', '')
+      return {
+        type: 'section' as const,
+        section: sections.find(s => s.id === sectionId),
+      }
+    }
+
+    return null
+  }, [activeId, placeholders, sections])
+
+  const handleDragStart = (event: DragStartEvent) => {
+    const { active } = event
+    setActiveId(active.id)
+    
+    const data = active.data.current as DragData | undefined
+    setActiveType(data?.type || null)
+    saveToHistory()
+  }
+
+  const handleDragOver = (event: DragOverEvent) => {
+    const { active, over } = event
+    if (!over) return
+
+    const activeData = active.data.current as DragData | undefined
+    const overData = over.data.current as DragData | undefined
+
+    if (!activeData || activeData.type !== 'placeholder') return
+
+    const activeSectionId = activeData.sectionId
+    let overSectionId: string | undefined
+
+    if (overData?.type === 'placeholder') {
+      overSectionId = overData.sectionId
+    } else if (overData?.type === 'section') {
+      overSectionId = overData.sectionId
+    }
+
+    if (!activeSectionId || !overSectionId || activeSectionId === overSectionId) return
+
+    // Move placeholder to new section
+    const placeholderId = activeData.placeholderId
+    if (!placeholderId) return
+
+    onSectionsChange(
+      movePlaceholder(sections, placeholderId, activeSectionId, overSectionId)
+    )
+    onAutoGroupedChange(false)
+  }
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event
+    setActiveId(null)
+    setActiveType(null)
+
+    if (!over) return
+
+    const activeData = active.data.current as DragData | undefined
+    const overData = over.data.current as DragData | undefined
+
+    if (!activeData) return
+
+    // Handle section reordering
+    if (activeData.type === 'section' && overData?.type === 'section') {
+      const activeIndex = sections.findIndex(s => s.id === activeData.sectionId)
+      const overIndex = sections.findIndex(s => s.id === overData.sectionId)
+
+      if (activeIndex !== overIndex) {
+        const newSections = arrayMove(sections, activeIndex, overIndex).map((s, i) => ({
+          ...s,
+          order: i,
+        }))
+        onSectionsChange(newSections)
+        onAutoGroupedChange(false)
+      }
+      return
+    }
+
+    // Handle placeholder reordering within same section
+    if (activeData.type === 'placeholder' && overData?.type === 'placeholder') {
+      if (activeData.sectionId === overData.sectionId) {
+        const sectionIndex = sections.findIndex(s => s.id === activeData.sectionId)
+        if (sectionIndex === -1) return
+
+        const section = sections[sectionIndex]
+        const activeIndex = section.placeholderIds.indexOf(activeData.placeholderId!)
+        const overIndex = section.placeholderIds.indexOf(overData.placeholderId!)
+
+        if (activeIndex !== overIndex) {
+          const newPlaceholderIds = arrayMove(section.placeholderIds, activeIndex, overIndex)
+          const newSections = [...sections]
+          newSections[sectionIndex] = { ...section, placeholderIds: newPlaceholderIds }
+          onSectionsChange(newSections)
+          onAutoGroupedChange(false)
+        }
+      }
+    }
+  }
+
   const handleToggleSection = (sectionId: string) => {
     onSectionsChange(toggleSectionExpanded(sections, sectionId))
   }
@@ -132,6 +683,7 @@ export function SectionForm({
 
   const handleAddSection = () => {
     if (newSectionName.trim()) {
+      saveToHistory()
       onSectionsChange(addSection(sections, newSectionName.trim()))
       onAutoGroupedChange(false)
       setNewSectionName('')
@@ -144,12 +696,12 @@ export function SectionForm({
     if (!section) return
 
     if (section.placeholderIds.length > 0) {
-      // Show confirmation dialog to choose where to move placeholders
       const otherSections = sections.filter(s => s.id !== sectionId)
       if (otherSections.length > 0) {
         setDeleteConfirm({ sectionId, moveTo: otherSections[0].id })
       }
     } else {
+      saveToHistory()
       onSectionsChange(deleteSection(sections, sectionId))
       onAutoGroupedChange(false)
     }
@@ -157,6 +709,7 @@ export function SectionForm({
 
   const handleConfirmDelete = () => {
     if (deleteConfirm) {
+      saveToHistory()
       onSectionsChange(deleteSection(sections, deleteConfirm.sectionId, deleteConfirm.moveTo))
       onAutoGroupedChange(false)
       setDeleteConfirm(null)
@@ -164,115 +717,16 @@ export function SectionForm({
   }
 
   const handleResetToAuto = () => {
+    saveToHistory()
     const newSections = autoGroupPlaceholders(placeholders)
     onSectionsChange(newSections)
     onAutoGroupedChange(true)
   }
 
-  const handleDragStart = (placeholderId: string, sectionId: string) => {
-    setDraggedPlaceholder({ id: placeholderId, sectionId })
-  }
-
-  const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault()
-  }
-
-  const handleDrop = (targetSectionId: string, targetIndex?: number) => {
-    if (draggedPlaceholder && draggedPlaceholder.sectionId !== targetSectionId) {
-      onSectionsChange(
-        movePlaceholder(
-          sections,
-          draggedPlaceholder.id,
-          draggedPlaceholder.sectionId,
-          targetSectionId,
-          targetIndex
-        )
-      )
-      onAutoGroupedChange(false)
-    }
-    setDraggedPlaceholder(null)
-  }
-
-  const renderField = (placeholder: Placeholder, sectionId: string) => {
-    const value = formData[placeholder.id]
-    const isFilled = value !== undefined && value !== null && value !== ''
-
-    return (
-      <motion.div
-        key={placeholder.id}
-        layout
-        initial={{ opacity: 0, y: 5 }}
-        animate={{ opacity: 1, y: 0 }}
-        exit={{ opacity: 0, y: -5 }}
-        draggable
-        onDragStart={() => handleDragStart(placeholder.id, sectionId)}
-        onDragEnd={() => setDraggedPlaceholder(null)}
-        className={cn(
-          'group relative rounded-lg border border-border bg-card p-4 transition-all',
-          draggedPlaceholder?.id === placeholder.id && 'opacity-50',
-          isFilled && 'border-primary/30 bg-primary/5'
-        )}
-      >
-        <div className="absolute left-2 top-1/2 -translate-y-1/2 cursor-grab opacity-0 group-hover:opacity-100 transition-opacity">
-          <GripVertical className="h-4 w-4 text-muted-foreground" />
-        </div>
-        <div className="pl-4 space-y-2">
-          <Label htmlFor={placeholder.id} className="flex items-center gap-2">
-            {placeholder.label}
-            {placeholder.required && (
-              <span className="text-destructive">*</span>
-            )}
-            {placeholder.syncStatus === 'new' && (
-              <Badge variant="outline" className="bg-blue-500/10 text-blue-600 border-blue-500/20 text-xs">
-                New
-              </Badge>
-            )}
-          </Label>
-          {placeholder.type === 'textarea' ? (
-            <Textarea
-              id={placeholder.id}
-              value={(value as string) || ''}
-              onChange={(e) => onFormDataChange(placeholder.id, e.target.value)}
-              placeholder={`Enter ${placeholder.label.toLowerCase()}`}
-              rows={3}
-              className="resize-none"
-            />
-          ) : placeholder.type === 'select' ? (
-            <Select
-              value={(value as string) || ''}
-              onValueChange={(v) => onFormDataChange(placeholder.id, v)}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder={`Select ${placeholder.label.toLowerCase()}`} />
-              </SelectTrigger>
-              <SelectContent>
-                {placeholder.options?.map((option) => (
-                  <SelectItem key={option} value={option}>
-                    {option}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          ) : (
-            <Input
-              id={placeholder.id}
-              type={
-                placeholder.type === 'number' ? 'number' :
-                placeholder.type === 'date' ? 'date' :
-                placeholder.type === 'email' ? 'email' : 'text'
-              }
-              value={(value as string) || ''}
-              onChange={(e) => onFormDataChange(placeholder.id, e.target.value)}
-              placeholder={`Enter ${placeholder.label.toLowerCase()}`}
-            />
-          )}
-        </div>
-      </motion.div>
-    )
-  }
+  const sectionIds = filteredSections.map(s => `section-${s.id}`)
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4" ref={containerRef}>
       {/* Header with Search and Controls */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="relative flex-1 max-w-sm">
@@ -288,6 +742,12 @@ export function SectionForm({
           <Badge variant="outline" className="font-normal">
             {overallProgress.filled}/{overallProgress.total} filled
           </Badge>
+          {history.length > 0 && (
+            <Button variant="outline" size="sm" onClick={handleUndo}>
+              <Undo2 className="mr-2 h-4 w-4" />
+              Undo
+            </Button>
+          )}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="outline" size="sm">
@@ -319,130 +779,57 @@ export function SectionForm({
         <Progress value={overallProgress.percentage} className="h-2" />
       </div>
 
-      {/* Sections */}
-      <div className="space-y-3">
-        <AnimatePresence mode="popLayout">
-          {filteredSections.map((section) => {
-            const progress = getSectionProgress(section, placeholders, formData)
-            const sectionPlaceholders = section.placeholderIds
-              .map(id => placeholders.find(p => p.id === id))
-              .filter(Boolean) as Placeholder[]
-
-            return (
-              <motion.div
+      {/* Sections with DnD */}
+      <DndContext
+        sensors={sensors}
+        collisionDetection={closestCorners}
+        onDragStart={handleDragStart}
+        onDragOver={handleDragOver}
+        onDragEnd={handleDragEnd}
+        measuring={{
+          droppable: {
+            strategy: MeasuringStrategy.Always,
+          },
+        }}
+      >
+        <SortableContext items={sectionIds} strategy={verticalListSortingStrategy}>
+          <div className="space-y-3">
+            {filteredSections.map((section) => (
+              <SortableSection
                 key={section.id}
-                layout
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -10 }}
-                className="rounded-xl border border-border bg-card overflow-hidden"
-                onDragOver={handleDragOver}
-                onDrop={() => handleDrop(section.id)}
-              >
-                {/* Section Header */}
-                <div
-                  className={cn(
-                    'flex items-center gap-3 p-4 cursor-pointer hover:bg-muted/50 transition-colors',
-                    section.isExpanded && 'border-b border-border'
-                  )}
-                  onClick={() => handleToggleSection(section.id)}
-                >
-                  {section.isExpanded ? (
-                    <ChevronDown className="h-5 w-5 text-muted-foreground shrink-0" />
-                  ) : (
-                    <ChevronRight className="h-5 w-5 text-muted-foreground shrink-0" />
-                  )}
-                  
-                  {editingSectionId === section.id ? (
-                    <div className="flex items-center gap-2 flex-1" onClick={(e) => e.stopPropagation()}>
-                      <Input
-                        value={editingSectionName}
-                        onChange={(e) => setEditingSectionName(e.target.value)}
-                        className="h-8"
-                        autoFocus
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') handleSaveEditSection()
-                          if (e.key === 'Escape') setEditingSectionId(null)
-                        }}
-                      />
-                      <Button size="icon" variant="ghost" className="h-8 w-8" onClick={handleSaveEditSection}>
-                        <Check className="h-4 w-4" />
-                      </Button>
-                      <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => setEditingSectionId(null)}>
-                        <X className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  ) : (
-                    <>
-                      <div className="flex-1 min-w-0">
-                        <h3 className="font-semibold text-foreground truncate">{section.name}</h3>
-                        <p className="text-xs text-muted-foreground">
-                          {progress.filled}/{progress.total} fields completed
-                        </p>
-                      </div>
-                      <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
-                        <div className="w-20">
-                          <Progress value={progress.percentage} className="h-1.5" />
-                        </div>
-                        <span className="text-xs text-muted-foreground w-10 text-right">
-                          {progress.percentage}%
-                        </span>
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button size="icon" variant="ghost" className="h-8 w-8">
-                              <Settings2 className="h-4 w-4" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuItem onClick={() => handleStartEditSection(section)}>
-                              <Pencil className="mr-2 h-4 w-4" />
-                              Rename
-                            </DropdownMenuItem>
-                            <DropdownMenuSeparator />
-                            <DropdownMenuItem
-                              onClick={() => handleDeleteSection(section.id)}
-                              className="text-destructive"
-                            >
-                              <Trash2 className="mr-2 h-4 w-4" />
-                              Delete
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      </div>
-                    </>
-                  )}
-                </div>
+                section={section}
+                placeholders={placeholders}
+                formData={formData}
+                onFormDataChange={onFormDataChange}
+                onToggleSection={handleToggleSection}
+                onEditSection={handleStartEditSection}
+                onDeleteSection={handleDeleteSection}
+                editingSectionId={editingSectionId}
+                editingSectionName={editingSectionName}
+                setEditingSectionName={setEditingSectionName}
+                onSaveEditSection={handleSaveEditSection}
+                onCancelEditSection={() => setEditingSectionId(null)}
+                activePlaceholderId={activeType === 'placeholder' && activeItem?.type === 'placeholder' 
+                  ? activeItem.placeholder?.id 
+                  : null}
+              />
+            ))}
+          </div>
+        </SortableContext>
 
-                {/* Section Content */}
-                <AnimatePresence>
-                  {section.isExpanded && (
-                    <motion.div
-                      initial={{ height: 0, opacity: 0 }}
-                      animate={{ height: 'auto', opacity: 1 }}
-                      exit={{ height: 0, opacity: 0 }}
-                      transition={{ duration: 0.2 }}
-                      className="overflow-hidden"
-                    >
-                      <div className="p-4 space-y-3">
-                        {sectionPlaceholders.length === 0 ? (
-                          <div className="text-center py-8 text-muted-foreground">
-                            <p>No fields in this section</p>
-                            <p className="text-sm">Drag fields here to add them</p>
-                          </div>
-                        ) : (
-                          sectionPlaceholders.map((placeholder) =>
-                            renderField(placeholder, section.id)
-                          )
-                        )}
-                      </div>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-              </motion.div>
-            )
-          })}
-        </AnimatePresence>
-      </div>
+        <DragOverlay dropAnimation={null} modifiers={[restrictToWindowEdges]}>
+          {activeItem?.type === 'placeholder' && activeItem.placeholder && (
+            <FieldDragOverlay placeholder={activeItem.placeholder} formData={formData} />
+          )}
+          {activeItem?.type === 'section' && activeItem.section && (
+            <SectionDragOverlay 
+              section={activeItem.section} 
+              placeholders={placeholders} 
+              formData={formData} 
+            />
+          )}
+        </DragOverlay>
+      </DndContext>
 
       {/* Add Section Dialog */}
       <Dialog open={showAddSection} onOpenChange={setShowAddSection}>
