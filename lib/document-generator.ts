@@ -1,6 +1,7 @@
 import PizZip from 'pizzip'
 import { saveAs } from 'file-saver'
 import { Template, GeneratedDocument, FormData } from '@/types'
+import { formatDateDDMMYYYY } from '@/lib/date-formatter'
 
 // Extract all text from <w:t> tags within a paragraph, preserving positions
 function extractTextWithPositions(xml: string): { text: string; segments: Array<{ start: number; end: number; tagStart: number; tagEnd: number }> } {
@@ -40,9 +41,12 @@ function replacePlaceholdersInXml(
     const value = formData[placeholder.id]
     console.log('[v0] Processing placeholder:', placeholder.name, 'id:', placeholder.id, 'value:', value)
     
+    // Format dates as DD/MM/YYYY
     const stringValue = value instanceof Date 
-      ? value.toLocaleDateString() 
-      : String(value || '')
+      ? formatDateDDMMYYYY(value) 
+      : typeof value === 'string' && placeholder.type === 'date' && value
+        ? formatDateDDMMYYYY(new Date(value))
+        : String(value || '')
     
     // Escape XML special characters
     const escapedValue = stringValue
@@ -75,9 +79,12 @@ function replacePlaceholdersInXml(
   // We need to find and reconstruct split placeholders
   placeholders.forEach(placeholder => {
     const value = formData[placeholder.id]
+    // Format dates as DD/MM/YYYY
     const stringValue = value instanceof Date 
-      ? value.toLocaleDateString() 
-      : String(value || '')
+      ? formatDateDDMMYYYY(value) 
+      : typeof value === 'string' && placeholder.type === 'date' && value
+        ? formatDateDDMMYYYY(new Date(value))
+        : String(value || '')
     
     const escapedValue = stringValue
       .replace(/&/g, '&amp;')
