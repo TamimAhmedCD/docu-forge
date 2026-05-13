@@ -7,6 +7,9 @@ import {
   DragOverlay,
   closestCenter,
   closestCorners,
+  pointerWithin,
+  rectIntersection,
+  getFirstCollision,
   KeyboardSensor,
   PointerSensor,
   TouchSensor,
@@ -18,6 +21,7 @@ import {
   UniqueIdentifier,
   MeasuringStrategy,
   useDroppable,
+  CollisionDetection,
 } from '@dnd-kit/core'
 import {
   arrayMove,
@@ -117,7 +121,7 @@ function DroppableSectionContent({
   children: React.ReactNode
   isEmpty?: boolean
 }) {
-  const { setNodeRef, isOver } = useDroppable({
+  const { setNodeRef, isOver, active } = useDroppable({
     id: `section-drop-${sectionId}`,
     data: {
       type: 'section' as DragItemType,
@@ -125,13 +129,17 @@ function DroppableSectionContent({
     },
   })
 
+  // Check if we're dragging a placeholder
+  const isDraggingPlaceholder = active?.data.current?.type === 'placeholder'
+
   if (isEmpty) {
     return (
       <div 
         ref={setNodeRef}
         className={cn(
-          "text-center py-8 text-muted-foreground border-2 border-dashed rounded-lg transition-colors",
-          isOver ? "border-primary bg-primary/10" : "border-border"
+          "text-center py-10 text-muted-foreground border-2 border-dashed rounded-lg transition-all duration-200",
+          isOver ? "border-primary bg-primary/10 scale-[1.01]" : "border-border",
+          isDraggingPlaceholder && !isOver && "border-primary/50"
         )}
       >
         <p>No fields in this section</p>
@@ -144,8 +152,9 @@ function DroppableSectionContent({
     <div 
       ref={setNodeRef}
       className={cn(
-        "rounded-lg transition-colors",
-        isOver && "ring-2 ring-primary/30 bg-primary/5"
+        "rounded-lg transition-all duration-200 min-h-[60px]",
+        isOver && "ring-2 ring-primary/50 bg-primary/5 scale-[1.005]",
+        isDraggingPlaceholder && !isOver && "ring-1 ring-primary/20"
       )}
     >
       {children}
@@ -590,12 +599,12 @@ export function SectionForm({
   const sensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: {
-        distance: 8,
+        distance: 5,
       },
     }),
     useSensor(TouchSensor, {
       activationConstraint: {
-        delay: 200,
+        delay: 150,
         tolerance: 5,
       },
     }),
@@ -603,6 +612,42 @@ export function SectionForm({
       coordinateGetter: sortableKeyboardCoordinates,
     })
   )
+
+  // Custom collision detection that prioritizes section drop zones
+  const customCollisionDetection: CollisionDetection = useCallback((args) => {
+    // First, check for pointer within droppables (most accurate for section drops)
+    const pointerCollisions = pointerWithin(args)
+    
+    // Find section drop zones first (they have priority)
+    const sectionDropZone = pointerCollisions.find(
+      collision => String(collision.id).startsWith('section-drop-')
+    )
+    if (sectionDropZone) {
+      return [sectionDropZone]
+    }
+
+    // Then check for placeholder collisions
+    const placeholderCollision = pointerCollisions.find(
+      collision => String(collision.id).startsWith('placeholder-')
+    )
+    if (placeholderCollision) {
+      return [placeholderCollision]
+    }
+
+    // Fall back to rect intersection for better detection
+    const rectCollisions = rectIntersection(args)
+    
+    // Prioritize section drop zones in rect collisions too
+    const sectionRectCollision = rectCollisions.find(
+      collision => String(collision.id).startsWith('section-drop-')
+    )
+    if (sectionRectCollision) {
+      return [sectionRectCollision]
+    }
+
+    // If no section drop zones, use closest corners as fallback
+    return closestCorners(args)
+  }, [])
 
   // Filter placeholders by search query
   const filteredSections = useMemo(() => {
@@ -900,13 +945,14 @@ export function SectionForm({
       {/* Sections with DnD */}
       <DndContext
         sensors={sensors}
-        collisionDetection={closestCorners}
+        collisionDetection={customCollisionDetection}
         onDragStart={handleDragStart}
         onDragOver={handleDragOver}
         onDragEnd={handleDragEnd}
         measuring={{
           droppable: {
             strategy: MeasuringStrategy.Always,
+            frequency: MeasuringStrategy.WhileDragging,
           },
         }}
       >
