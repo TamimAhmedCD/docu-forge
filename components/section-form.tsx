@@ -108,8 +108,16 @@ interface DragData {
   placeholderId?: string
 }
 
-// Droppable Empty Section - only used when section has no fields
-function DroppableEmptySection({ sectionId }: { sectionId: string }) {
+// Droppable Section Area - wraps section content to enable cross-section drops
+function DroppableSectionArea({ 
+  sectionId, 
+  children, 
+  isEmpty 
+}: { 
+  sectionId: string
+  children?: React.ReactNode
+  isEmpty?: boolean
+}) {
   const { setNodeRef, isOver } = useDroppable({
     id: `section-drop-${sectionId}`,
     data: {
@@ -118,16 +126,30 @@ function DroppableEmptySection({ sectionId }: { sectionId: string }) {
     },
   })
 
+  if (isEmpty) {
+    return (
+      <div 
+        ref={setNodeRef}
+        className={cn(
+          "text-center py-10 text-muted-foreground border-2 border-dashed rounded-lg transition-all duration-200",
+          isOver ? "border-primary bg-primary/10" : "border-border"
+        )}
+      >
+        <p>No fields in this section</p>
+        <p className="text-sm">Drag fields here to add them</p>
+      </div>
+    )
+  }
+
   return (
     <div 
       ref={setNodeRef}
       className={cn(
-        "text-center py-10 text-muted-foreground border-2 border-dashed rounded-lg transition-all duration-200",
-        isOver ? "border-primary bg-primary/10" : "border-border"
+        "min-h-[60px] rounded-lg transition-all duration-200",
+        isOver && "ring-2 ring-primary/50 bg-primary/5"
       )}
     >
-      <p>No fields in this section</p>
-      <p className="text-sm">Drag fields here to add them</p>
+      {children}
     </div>
   )
 }
@@ -468,9 +490,7 @@ function SortableSection({
             className="overflow-hidden"
           >
             <div className="p-4 min-h-[80px]">
-              {sectionPlaceholders.length === 0 ? (
-                <DroppableEmptySection sectionId={section.id} />
-              ) : (
+              <DroppableSectionArea sectionId={section.id} isEmpty={sectionPlaceholders.length === 0}>
                 <SortableContext items={placeholderIds} strategy={verticalListSortingStrategy}>
                   <div className="grid grid-cols-6 gap-3">
                     {sectionPlaceholders.map((placeholder) => (
@@ -486,7 +506,7 @@ function SortableSection({
                     ))}
                   </div>
                 </SortableContext>
-              )}
+              </DroppableSectionArea>
             </div>
           </motion.div>
         )}
@@ -583,26 +603,43 @@ export function SectionForm({
     })
   )
 
-  // Simple collision detection - use closestCenter for reordering, with pointerWithin for empty sections
+  // Custom collision detection that handles both reordering and cross-section drops
   const customCollisionDetection: CollisionDetection = useCallback((args) => {
-    // Use closestCenter as primary - it's the best for sortable lists
-    const closestCollisions = closestCenter(args)
+    // Get all collisions using pointerWithin (most accurate for nested droppables)
+    const pointerCollisions = pointerWithin(args)
     
-    // If we found a collision, use it
-    if (closestCollisions.length > 0) {
-      return closestCollisions
+    console.log("[v0] Collisions detected:", pointerCollisions.map(c => c.id))
+    
+    // Priority 1: If pointer is directly over a placeholder, use that for reordering
+    const placeholderCollision = pointerCollisions.find(
+      collision => String(collision.id).startsWith('placeholder-')
+    )
+    if (placeholderCollision) {
+      console.log("[v0] Using placeholder collision:", placeholderCollision.id)
+      return [placeholderCollision]
     }
 
-    // Fall back to pointerWithin for empty section drops
-    const pointerCollisions = pointerWithin(args)
+    // Priority 2: If pointer is over a section drop zone, use that for cross-section drops
     const sectionDropZone = pointerCollisions.find(
       collision => String(collision.id).startsWith('section-drop-')
     )
     if (sectionDropZone) {
+      console.log("[v0] Using section drop zone:", sectionDropZone.id)
       return [sectionDropZone]
     }
 
-    return closestCollisions
+    // Priority 3: If pointer is over a section (header), use that for section reordering
+    const sectionCollision = pointerCollisions.find(
+      collision => String(collision.id).startsWith('section-') && !String(collision.id).startsWith('section-drop-')
+    )
+    if (sectionCollision) {
+      console.log("[v0] Using section collision:", sectionCollision.id)
+      return [sectionCollision]
+    }
+
+    // Fallback: Use closestCenter for any remaining cases
+    console.log("[v0] Using closestCenter fallback")
+    return closestCenter(args)
   }, [])
 
   // Filter placeholders by search query
@@ -697,32 +734,33 @@ export function SectionForm({
     const activeSectionId = activeData.sectionId
     let overSectionId: string | undefined
 
-    // Check if dropping on a placeholder
+    // Check if dropping on a placeholder - get its section
     if (overData?.type === 'placeholder') {
       overSectionId = overData.sectionId
     } 
-    // Check if dropping on a section (including section header or empty area)
+    // Check if dropping on a section drop zone (content area)
+    else if (String(over.id).startsWith('section-drop-')) {
+      overSectionId = String(over.id).replace('section-drop-', '')
+    }
+    // Check if dropping on a section header
     else if (overData?.type === 'section') {
       overSectionId = overData.sectionId
     }
-    // Also check if the over.id itself is a section id or section drop zone
-    else {
-      const overId = String(over.id)
-      if (overId.startsWith('section-drop-')) {
-        // This is the droppable empty section zone
-        overSectionId = overId.replace('section-drop-', '')
-      } else if (overId.startsWith('section-')) {
-        overSectionId = overId.replace('section-', '')
-      }
+    // Fallback: check if over.id is a section id
+    else if (String(over.id).startsWith('section-')) {
+      overSectionId = String(over.id).replace('section-', '')
     }
 
-
-
+    console.log("[v0] DragOver check:", { activeSectionId, overSectionId, same: activeSectionId === overSectionId })
+    
+    // Skip if same section or no valid target
     if (!activeSectionId || !overSectionId || activeSectionId === overSectionId) return
 
     // Move placeholder to new section
     const placeholderId = activeData.placeholderId
     if (!placeholderId) return
+
+    console.log("[v0] DragOver - Moving placeholder:", { placeholderId, from: activeSectionId, to: overSectionId })
 
     // Update the active data's sectionId so subsequent drag-over events work correctly
     if (active.data.current) {
@@ -808,15 +846,26 @@ export function SectionForm({
         return
       }
 
-      // Case 2: Dropping on a section drop zone
-      if (overData?.type === 'section' || String(over.id).startsWith('section-drop-')) {
-        const targetSectionId = overData?.sectionId || String(over.id).replace('section-drop-', '')
-        if (targetSectionId && targetSectionId !== activeData.sectionId) {
-          onSectionsChange(
-            movePlaceholder(sections, activePlaceholderId, activeData.sectionId!, targetSectionId)
-          )
-          onAutoGroupedChange(false)
-        }
+      // Case 2: Dropping on a section (header or drop zone)
+      let targetSectionId: string | undefined
+      const overId = String(over.id)
+      
+      if (overId.startsWith('section-drop-')) {
+        targetSectionId = overId.replace('section-drop-', '')
+      } else if (overData?.type === 'section' && overData?.sectionId) {
+        targetSectionId = overData.sectionId
+      } else if (overId.startsWith('section-')) {
+        targetSectionId = overId.replace('section-', '')
+      }
+
+      console.log("[v0] Case 2 - Drop on section:", { targetSectionId, activeSectionId: activeData.sectionId })
+      
+      if (targetSectionId && targetSectionId !== activeData.sectionId) {
+        console.log("[v0] Moving placeholder to section:", targetSectionId)
+        onSectionsChange(
+          movePlaceholder(sections, activePlaceholderId, activeData.sectionId!, targetSectionId)
+        )
+        onAutoGroupedChange(false)
       }
     }
   }
