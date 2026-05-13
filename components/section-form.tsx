@@ -42,6 +42,10 @@ import {
   RotateCcw,
   Undo2,
   Columns,
+  Group,
+  Ungroup,
+  CheckSquare,
+  Square,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -71,7 +75,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { Placeholder, FormSection, FormData as FormDataType, FieldWidth } from '@/types'
+import { Placeholder, FormSection, FormData as FormDataType, FieldWidth, FieldGroup } from '@/types'
 import { cn } from '@/lib/utils'
 import {
   getSectionProgress,
@@ -81,6 +85,13 @@ import {
   deleteSection,
   movePlaceholder,
   autoGroupPlaceholders,
+  createGroup,
+  ungroupFields,
+  toggleGroupExpanded,
+  renameGroup,
+  moveGroup,
+  reorderSectionItems,
+  getAllPlaceholderIdsInSection,
 } from '@/lib/section-grouping'
 import {
   detectFieldWidth,
@@ -100,11 +111,12 @@ interface SectionFormProps {
 }
 
 // Types for drag items
-type DragItemType = 'placeholder' | 'section'
+type DragItemType = 'placeholder' | 'section' | 'group'
 interface DragData {
   type: DragItemType
   sectionId?: string
   placeholderId?: string
+  groupId?: string
 }
 
 // Droppable Section Area - wraps section content to enable cross-section drops
@@ -176,6 +188,9 @@ function SortableField({
   onFormDataChange,
   onWidthChange,
   isDragging,
+  isSelectionMode,
+  isSelected,
+  onToggleSelection,
 }: {
   placeholder: Placeholder
   sectionId: string
@@ -183,6 +198,9 @@ function SortableField({
   onFormDataChange: (id: string, value: string | number | Date) => void
   onWidthChange?: (id: string, width: FieldWidth) => void
   isDragging?: boolean
+  isSelectionMode?: boolean
+  isSelected?: boolean
+  onToggleSelection?: (id: string) => void
 }) {
   const {
     attributes,
@@ -229,15 +247,33 @@ function SortableField({
       className={cn(
         'group relative rounded-lg border border-border bg-card p-3 transition-all hover:border-muted-foreground/30',
         isFilled && 'border-primary/30 bg-primary/5',
+        isSelectionMode && isSelected && 'ring-2 ring-primary border-primary',
         getFieldWidthClasses(fieldWidth)
       )}
     >
+      {/* Selection Checkbox */}
+      {isSelectionMode && (
+        <button
+          onClick={() => onToggleSelection?.(placeholder.id)}
+          className="absolute top-2 right-2 p-1 rounded hover:bg-muted transition-colors z-10"
+        >
+          {isSelected ? (
+            <CheckSquare className="h-4 w-4 text-primary" />
+          ) : (
+            <Square className="h-4 w-4 text-muted-foreground" />
+          )}
+        </button>
+      )}
+      
       {/* Compact Header with Drag Handle and Width Selector */}
       <div className="flex items-center gap-2 mb-2">
         <div
           {...attributes}
           {...listeners}
-          className="cursor-grab active:cursor-grabbing p-1 -m-1 rounded hover:bg-muted transition-colors touch-none"
+          className={cn(
+            "cursor-grab active:cursor-grabbing p-1 -m-1 rounded hover:bg-muted transition-colors touch-none",
+            isSelectionMode && "opacity-50 pointer-events-none"
+          )}
           style={{ touchAction: 'none' }}
         >
           <GripVertical className="h-4 w-4 text-muted-foreground" />
@@ -328,6 +364,315 @@ function SortableField({
   )
 }
 
+// Sortable Group Component - renders a group of fields as a single draggable unit
+function SortableGroup({
+  group,
+  sectionId,
+  placeholders,
+  formData,
+  onFormDataChange,
+  onWidthChange,
+  onToggleGroup,
+  onUngroupFields,
+  onRenameGroup,
+  isDragging: externalIsDragging,
+  isSelectionMode,
+  selectedFields,
+  onToggleFieldSelection,
+}: {
+  group: FieldGroup
+  sectionId: string
+  placeholders: Placeholder[]
+  formData: FormDataType
+  onFormDataChange: (id: string, value: string | number | Date) => void
+  onWidthChange?: (id: string, width: FieldWidth) => void
+  onToggleGroup: (groupId: string) => void
+  onUngroupFields: (groupId: string) => void
+  onRenameGroup: (groupId: string, newName: string) => void
+  isDragging?: boolean
+  isSelectionMode?: boolean
+  selectedFields?: Set<string>
+  onToggleFieldSelection?: (id: string) => void
+}) {
+  const [isEditing, setIsEditing] = useState(false)
+  const [editName, setEditName] = useState(group.name)
+  
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging: isSortableDragging,
+  } = useSortable({
+    id: `group-${group.id}`,
+    data: {
+      type: 'group' as DragItemType,
+      sectionId,
+      groupId: group.id,
+    },
+  })
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+  }
+
+  const groupPlaceholders = group.placeholderIds
+    .map(id => placeholders.find(p => p.id === id))
+    .filter(Boolean) as Placeholder[]
+
+  const filledCount = groupPlaceholders.filter(p => {
+    const value = formData[p.id]
+    return value !== undefined && value !== null && value !== ''
+  }).length
+
+  if (isSortableDragging || externalIsDragging) {
+    return (
+      <div
+        ref={setNodeRef}
+        style={style}
+        className={cn(
+          'col-span-6 rounded-lg border-2 border-dashed border-primary/50 bg-primary/5 h-20'
+        )}
+      />
+    )
+  }
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className={cn(
+        'col-span-6 rounded-lg border-2 transition-all',
+        group.color || 'bg-muted/30 border-border'
+      )}
+    >
+      {/* Group Header */}
+      <div className="flex items-center gap-2 p-3 border-b border-border/50">
+        <div
+          {...attributes}
+          {...listeners}
+          className="cursor-grab active:cursor-grabbing p-1 -m-1 rounded hover:bg-muted transition-colors touch-none"
+          style={{ touchAction: 'none' }}
+        >
+          <GripVertical className="h-4 w-4 text-muted-foreground" />
+        </div>
+        
+        <button
+          onClick={() => onToggleGroup(group.id)}
+          className="p-0.5 hover:bg-muted rounded transition-colors"
+        >
+          {group.isExpanded ? (
+            <ChevronDown className="h-4 w-4 text-muted-foreground" />
+          ) : (
+            <ChevronRight className="h-4 w-4 text-muted-foreground" />
+          )}
+        </button>
+        
+        {isEditing ? (
+          <div className="flex items-center gap-2 flex-1">
+            <Input
+              value={editName}
+              onChange={(e) => setEditName(e.target.value)}
+              className="h-7 text-sm"
+              autoFocus
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  onRenameGroup(group.id, editName)
+                  setIsEditing(false)
+                }
+                if (e.key === 'Escape') {
+                  setEditName(group.name)
+                  setIsEditing(false)
+                }
+              }}
+            />
+            <Button
+              size="icon"
+              variant="ghost"
+              className="h-6 w-6"
+              onClick={() => {
+                onRenameGroup(group.id, editName)
+                setIsEditing(false)
+              }}
+            >
+              <Check className="h-3 w-3" />
+            </Button>
+            <Button
+              size="icon"
+              variant="ghost"
+              className="h-6 w-6"
+              onClick={() => {
+                setEditName(group.name)
+                setIsEditing(false)
+              }}
+            >
+              <X className="h-3 w-3" />
+            </Button>
+          </div>
+        ) : (
+          <>
+            <div className="flex-1 flex items-center gap-2">
+              <Group className="h-4 w-4 text-muted-foreground" />
+              <span className="text-sm font-medium">{group.name}</span>
+              <Badge variant="secondary" className="text-xs">
+                {filledCount}/{groupPlaceholders.length}
+              </Badge>
+            </div>
+            
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button size="icon" variant="ghost" className="h-7 w-7">
+                  <Settings2 className="h-3.5 w-3.5" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={() => setIsEditing(true)}>
+                  <Pencil className="mr-2 h-4 w-4" />
+                  Rename
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => onUngroupFields(group.id)}>
+                  <Ungroup className="mr-2 h-4 w-4" />
+                  Ungroup
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </>
+        )}
+      </div>
+      
+      {/* Group Content */}
+      <AnimatePresence>
+        {group.isExpanded && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.15 }}
+            className="overflow-hidden"
+          >
+            <div className="p-3 grid grid-cols-6 gap-3">
+              {groupPlaceholders.map((placeholder) => (
+                <GroupField
+                  key={placeholder.id}
+                  placeholder={placeholder}
+                  formData={formData}
+                  onFormDataChange={onFormDataChange}
+                  onWidthChange={onWidthChange}
+                  isSelectionMode={isSelectionMode}
+                  isSelected={selectedFields?.has(placeholder.id)}
+                  onToggleSelection={onToggleFieldSelection}
+                />
+              ))}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  )
+}
+
+// Field inside a group (not individually draggable)
+function GroupField({
+  placeholder,
+  formData,
+  onFormDataChange,
+  onWidthChange,
+  isSelectionMode,
+  isSelected,
+  onToggleSelection,
+}: {
+  placeholder: Placeholder
+  formData: FormDataType
+  onFormDataChange: (id: string, value: string | number | Date) => void
+  onWidthChange?: (id: string, width: FieldWidth) => void
+  isSelectionMode?: boolean
+  isSelected?: boolean
+  onToggleSelection?: (id: string) => void
+}) {
+  const value = formData[placeholder.id]
+  const isFilled = value !== undefined && value !== null && value !== ''
+  const fieldWidth = detectFieldWidth(placeholder)
+
+  return (
+    <div
+      className={cn(
+        'group relative rounded-lg border border-border bg-card p-3 transition-all hover:border-muted-foreground/30',
+        isFilled && 'border-primary/30 bg-primary/5',
+        isSelectionMode && isSelected && 'ring-2 ring-primary border-primary',
+        getFieldWidthClasses(fieldWidth)
+      )}
+    >
+      {/* Selection Checkbox */}
+      {isSelectionMode && (
+        <button
+          onClick={() => onToggleSelection?.(placeholder.id)}
+          className="absolute top-2 right-2 p-1 rounded hover:bg-muted transition-colors z-10"
+        >
+          {isSelected ? (
+            <CheckSquare className="h-4 w-4 text-primary" />
+          ) : (
+            <Square className="h-4 w-4 text-muted-foreground" />
+          )}
+        </button>
+      )}
+      
+      {/* Field Header */}
+      <div className="flex items-center gap-2 mb-2">
+        <Label htmlFor={placeholder.id} className="flex-1 text-sm font-medium truncate flex items-center gap-1.5">
+          {placeholder.label}
+          {placeholder.required && (
+            <span className="text-destructive text-xs">*</span>
+          )}
+        </Label>
+      </div>
+
+      {/* Input */}
+      {placeholder.type === 'textarea' ? (
+        <Textarea
+          id={placeholder.id}
+          value={(value as string) || ''}
+          onChange={(e) => onFormDataChange(placeholder.id, e.target.value)}
+          placeholder={`Enter ${placeholder.label.toLowerCase()}`}
+          rows={2}
+          className="resize-none text-sm min-h-[60px]"
+        />
+      ) : placeholder.type === 'select' ? (
+        <Select
+          value={(value as string) || ''}
+          onValueChange={(v) => onFormDataChange(placeholder.id, v)}
+        >
+          <SelectTrigger className="h-9 text-sm">
+            <SelectValue placeholder={`Select...`} />
+          </SelectTrigger>
+          <SelectContent>
+            {placeholder.options?.map((option) => (
+              <SelectItem key={option} value={option}>
+                {option}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      ) : (
+        <Input
+          id={placeholder.id}
+          type={
+            placeholder.type === 'number' ? 'number' :
+            placeholder.type === 'date' ? 'date' :
+            placeholder.type === 'email' ? 'email' : 'text'
+          }
+          value={(value as string) || ''}
+          onChange={(e) => onFormDataChange(placeholder.id, e.target.value)}
+          placeholder={`Enter ${placeholder.label.toLowerCase()}`}
+          className="h-9 text-sm"
+        />
+      )}
+    </div>
+  )
+}
+
 // Sortable Section Component
 function SortableSection({
   section,
@@ -345,6 +690,13 @@ function SortableSection({
   onCancelEditSection,
   isDragOverlay,
   activePlaceholderId,
+  activeGroupId,
+  onToggleGroup,
+  onUngroupFields,
+  onRenameGroup,
+  isSelectionMode,
+  selectedFields,
+  onToggleFieldSelection,
 }: {
   section: FormSection
   placeholders: Placeholder[]
@@ -361,6 +713,13 @@ function SortableSection({
   onCancelEditSection: () => void
   isDragOverlay?: boolean
   activePlaceholderId?: string | null
+  activeGroupId?: string | null
+  onToggleGroup: (sectionId: string, groupId: string) => void
+  onUngroupFields: (sectionId: string, groupId: string) => void
+  onRenameGroup: (sectionId: string, groupId: string, newName: string) => void
+  isSelectionMode?: boolean
+  selectedFields?: Set<string>
+  onToggleFieldSelection?: (id: string) => void
 }) {
   const {
     attributes,
@@ -383,11 +742,23 @@ function SortableSection({
   }
 
   const progress = getSectionProgress(section, placeholders, formData)
-  const sectionPlaceholders = section.placeholderIds
-    .map(id => placeholders.find(p => p.id === id))
-    .filter(Boolean) as Placeholder[]
+  
+  // Get items for rendering (both placeholders and group references)
+  const sectionItems = section.placeholderIds.map(itemId => {
+    if (itemId.startsWith('group-')) {
+      const groupId = itemId.replace('group-', '')
+      const group = section.groups?.find(g => g.id === groupId)
+      return group ? { type: 'group' as const, group } : null
+    } else {
+      const placeholder = placeholders.find(p => p.id === itemId)
+      return placeholder ? { type: 'placeholder' as const, placeholder } : null
+    }
+  }).filter(Boolean) as ({ type: 'group'; group: FieldGroup } | { type: 'placeholder'; placeholder: Placeholder })[]
 
-  const placeholderIds = sectionPlaceholders.map(p => `placeholder-${p.id}`)
+  // IDs for SortableContext - includes both placeholders and groups
+  const sortableIds = section.placeholderIds.map(id => 
+    id.startsWith('group-') ? id : `placeholder-${id}`
+  )
 
   if (isDragging && !isDragOverlay) {
     return (
@@ -504,20 +875,45 @@ function SortableSection({
             className="overflow-hidden"
           >
             <div className="p-4 min-h-[80px]">
-              <DroppableSectionArea sectionId={section.id} isEmpty={sectionPlaceholders.length === 0}>
-                <SortableContext items={placeholderIds} strategy={verticalListSortingStrategy}>
+              <DroppableSectionArea sectionId={section.id} isEmpty={sectionItems.length === 0}>
+                <SortableContext items={sortableIds} strategy={verticalListSortingStrategy}>
                   <div className="grid grid-cols-6 gap-3">
-                    {sectionPlaceholders.map((placeholder) => (
-                      <SortableField
-                        key={placeholder.id}
-                        placeholder={placeholder}
-                        sectionId={section.id}
-                        formData={formData}
-                        onFormDataChange={onFormDataChange}
-                        onWidthChange={onWidthChange}
-                        isDragging={activePlaceholderId === placeholder.id}
-                      />
-                    ))}
+                    {sectionItems.map((item) => {
+                      if (item.type === 'group') {
+                        return (
+                          <SortableGroup
+                            key={item.group.id}
+                            group={item.group}
+                            sectionId={section.id}
+                            placeholders={placeholders}
+                            formData={formData}
+                            onFormDataChange={onFormDataChange}
+                            onWidthChange={onWidthChange}
+                            onToggleGroup={(groupId) => onToggleGroup(section.id, groupId)}
+                            onUngroupFields={(groupId) => onUngroupFields(section.id, groupId)}
+                            onRenameGroup={(groupId, newName) => onRenameGroup(section.id, groupId, newName)}
+                            isDragging={activeGroupId === item.group.id}
+                            isSelectionMode={isSelectionMode}
+                            selectedFields={selectedFields}
+                            onToggleFieldSelection={onToggleFieldSelection}
+                          />
+                        )
+                      }
+                      return (
+                        <SortableField
+                          key={item.placeholder.id}
+                          placeholder={item.placeholder}
+                          sectionId={section.id}
+                          formData={formData}
+                          onFormDataChange={onFormDataChange}
+                          onWidthChange={onWidthChange}
+                          isDragging={activePlaceholderId === item.placeholder.id}
+                          isSelectionMode={isSelectionMode}
+                          isSelected={selectedFields?.has(item.placeholder.id)}
+                          onToggleSelection={onToggleFieldSelection}
+                        />
+                      )
+                    })}
                   </div>
                 </SortableContext>
               </DroppableSectionArea>
@@ -581,6 +977,38 @@ function SectionDragOverlay({ section, placeholders, formData }: {
   )
 }
 
+// Group Drag Overlay Component
+function GroupDragOverlay({ group, placeholders, formData }: { 
+  group: FieldGroup
+  placeholders: Placeholder[]
+  formData: FormDataType 
+}) {
+  const groupPlaceholders = group.placeholderIds
+    .map(id => placeholders.find(p => p.id === id))
+    .filter(Boolean) as Placeholder[]
+  
+  const filledCount = groupPlaceholders.filter(p => {
+    const value = formData[p.id]
+    return value !== undefined && value !== null && value !== ''
+  }).length
+
+  return (
+    <div className={cn(
+      "rounded-lg border-2 border-primary bg-card shadow-2xl w-full max-w-md p-3",
+      group.color
+    )}>
+      <div className="flex items-center gap-2">
+        <GripVertical className="h-4 w-4 text-primary" />
+        <Group className="h-4 w-4 text-muted-foreground" />
+        <span className="font-medium">{group.name}</span>
+        <Badge variant="secondary" className="text-xs ml-auto">
+          {filledCount}/{groupPlaceholders.length}
+        </Badge>
+      </div>
+    </div>
+  )
+}
+
 export function SectionForm({
   sections,
   placeholders,
@@ -601,6 +1029,12 @@ export function SectionForm({
   const [activeType, setActiveType] = useState<DragItemType | null>(null)
   const [history, setHistory] = useState<FormSection[][]>([])
   const containerRef = useRef<HTMLDivElement>(null)
+  
+  // Selection mode state for grouping
+  const [isSelectionMode, setIsSelectionMode] = useState(false)
+  const [selectedFields, setSelectedFields] = useState<Set<string>>(new Set())
+  const [showGroupDialog, setShowGroupDialog] = useState(false)
+  const [newGroupName, setNewGroupName] = useState('')
 
   // Configure sensors with touch support
   const sensors = useSensors(

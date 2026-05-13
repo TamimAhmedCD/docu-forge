@@ -56,11 +56,21 @@ export interface TemplateEditorState {
   selectedPlaceholder: Placeholder | null
 }
 
+// Field group for grouping multiple placeholders together
+export interface FieldGroup {
+  id: string
+  name: string
+  placeholderIds: string[]
+  isExpanded: boolean
+  color?: string
+}
+
 // Section types for dynamic form grouping
 export interface FormSection {
   id: string
   name: string
-  placeholderIds: string[]
+  placeholderIds: string[] // Can contain placeholder IDs or group IDs (prefixed with 'group-')
+  groups: FieldGroup[] // Groups within this section
   order: number
   isExpanded: boolean
 }

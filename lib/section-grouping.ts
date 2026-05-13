@@ -1,4 +1,14 @@
-import { Placeholder, FormSection, SectionConfig } from '@/types'
+import { Placeholder, FormSection, SectionConfig, FieldGroup } from '@/types'
+
+// Group colors for visual distinction
+export const GROUP_COLORS = [
+  'bg-blue-500/10 border-blue-500/30',
+  'bg-green-500/10 border-green-500/30',
+  'bg-purple-500/10 border-purple-500/30',
+  'bg-orange-500/10 border-orange-500/30',
+  'bg-pink-500/10 border-pink-500/30',
+  'bg-cyan-500/10 border-cyan-500/30',
+]
 
 // Auto-detection rules for grouping placeholders
 const SECTION_RULES: { name: string; keywords: string[] }[] = [
@@ -71,6 +81,7 @@ export function autoGroupPlaceholders(placeholders: Placeholder[]): FormSection[
         id: crypto.randomUUID(),
         name: rule.name,
         placeholderIds: ids,
+        groups: [],
         order: order++,
         isExpanded: order === 1, // First section expanded by default
       })
@@ -85,6 +96,7 @@ export function autoGroupPlaceholders(placeholders: Placeholder[]): FormSection[
         id: crypto.randomUUID(),
         name,
         placeholderIds: ids,
+        groups: [],
         order: order++,
         isExpanded: sections.length === 0, // Expand if it's the first section
       })
@@ -122,12 +134,33 @@ export function syncSectionsWithPlaceholders(
     .filter(p => !existingPlaceholderIds.has(p.id))
     .map(p => p.id)
   
-  // Remove placeholders that no longer exist from sections
+  // Remove placeholders that no longer exist from sections and groups
   // Note: Empty sections are preserved - they are NOT auto-deleted
-  const updatedSections = existingSections.map(section => ({
-    ...section,
-    placeholderIds: section.placeholderIds.filter(id => newPlaceholderIds.has(id)),
-  }))
+  const updatedSections = existingSections.map(section => {
+    // Filter groups to remove non-existent placeholders
+    const updatedGroups = (section.groups || []).map(group => ({
+      ...group,
+      placeholderIds: group.placeholderIds.filter(id => newPlaceholderIds.has(id)),
+    })).filter(group => group.placeholderIds.length > 0) // Remove empty groups
+    
+    // Get IDs of removed groups
+    const validGroupIds = new Set(updatedGroups.map(g => g.id))
+    
+    // Filter placeholderIds - keep group references only if group still exists
+    const filteredIds = section.placeholderIds.filter(id => {
+      if (id.startsWith('group-')) {
+        const groupId = id.replace('group-', '')
+        return validGroupIds.has(groupId)
+      }
+      return newPlaceholderIds.has(id)
+    })
+    
+    return {
+      ...section,
+      placeholderIds: filteredIds,
+      groups: updatedGroups,
+    }
+  })
   
   if (newIds.length === 0) {
     return updatedSections
@@ -232,6 +265,7 @@ export function addSection(sections: FormSection[], name: string): FormSection[]
       id: crypto.randomUUID(),
       name,
       placeholderIds: [],
+      groups: [],
       order: sections.length,
       isExpanded: true,
     },
@@ -292,7 +326,9 @@ export function getSectionProgress(
   placeholders: Placeholder[],
   formData: Record<string, unknown>
 ): { filled: number; total: number; percentage: number } {
-  const sectionPlaceholders = placeholders.filter(p => section.placeholderIds.includes(p.id))
+  // Get all placeholder IDs including those in groups
+  const allPlaceholderIds = getAllPlaceholderIdsInSection(section)
+  const sectionPlaceholders = placeholders.filter(p => allPlaceholderIds.includes(p.id))
   const filled = sectionPlaceholders.filter(p => {
     const value = formData[p.id]
     return value !== undefined && value !== null && value !== ''
@@ -304,4 +340,199 @@ export function getSectionProgress(
     total,
     percentage: total > 0 ? Math.round((filled / total) * 100) : 0,
   }
+}
+
+/**
+ * Get all placeholder IDs in a section (including those in groups)
+ */
+export function getAllPlaceholderIdsInSection(section: FormSection): string[] {
+  const ids: string[] = []
+  
+  for (const itemId of section.placeholderIds) {
+    if (itemId.startsWith('group-')) {
+      const groupId = itemId.replace('group-', '')
+      const group = section.groups?.find(g => g.id === groupId)
+      if (group) {
+        ids.push(...group.placeholderIds)
+      }
+    } else {
+      ids.push(itemId)
+    }
+  }
+  
+  return ids
+}
+
+/**
+ * Create a new group from selected placeholders
+ */
+export function createGroup(
+  sections: FormSection[],
+  sectionId: string,
+  placeholderIds: string[],
+  groupName: string
+): FormSection[] {
+  const colorIndex = sections.reduce((acc, s) => acc + (s.groups?.length || 0), 0) % GROUP_COLORS.length
+  
+  return sections.map(section => {
+    if (section.id !== sectionId) return section
+    
+    const newGroup: FieldGroup = {
+      id: crypto.randomUUID(),
+      name: groupName,
+      placeholderIds: placeholderIds,
+      isExpanded: true,
+      color: GROUP_COLORS[colorIndex],
+    }
+    
+    // Find the position of the first selected placeholder
+    const firstIndex = section.placeholderIds.findIndex(id => placeholderIds.includes(id))
+    
+    // Remove selected placeholders from section
+    const newPlaceholderIds = section.placeholderIds.filter(id => !placeholderIds.includes(id))
+    
+    // Insert group reference at the first placeholder's position
+    const insertIndex = firstIndex >= 0 ? Math.min(firstIndex, newPlaceholderIds.length) : newPlaceholderIds.length
+    newPlaceholderIds.splice(insertIndex, 0, `group-${newGroup.id}`)
+    
+    return {
+      ...section,
+      placeholderIds: newPlaceholderIds,
+      groups: [...(section.groups || []), newGroup],
+    }
+  })
+}
+
+/**
+ * Ungroup a field group (move placeholders back to section)
+ */
+export function ungroupFields(
+  sections: FormSection[],
+  sectionId: string,
+  groupId: string
+): FormSection[] {
+  return sections.map(section => {
+    if (section.id !== sectionId) return section
+    
+    const group = section.groups?.find(g => g.id === groupId)
+    if (!group) return section
+    
+    // Find the group reference position
+    const groupRefIndex = section.placeholderIds.indexOf(`group-${groupId}`)
+    
+    // Replace group reference with individual placeholders
+    const newPlaceholderIds = [...section.placeholderIds]
+    if (groupRefIndex >= 0) {
+      newPlaceholderIds.splice(groupRefIndex, 1, ...group.placeholderIds)
+    }
+    
+    return {
+      ...section,
+      placeholderIds: newPlaceholderIds,
+      groups: section.groups?.filter(g => g.id !== groupId) || [],
+    }
+  })
+}
+
+/**
+ * Toggle group expanded state
+ */
+export function toggleGroupExpanded(
+  sections: FormSection[],
+  sectionId: string,
+  groupId: string
+): FormSection[] {
+  return sections.map(section => {
+    if (section.id !== sectionId) return section
+    
+    return {
+      ...section,
+      groups: section.groups?.map(g => 
+        g.id === groupId ? { ...g, isExpanded: !g.isExpanded } : g
+      ) || [],
+    }
+  })
+}
+
+/**
+ * Rename a group
+ */
+export function renameGroup(
+  sections: FormSection[],
+  sectionId: string,
+  groupId: string,
+  newName: string
+): FormSection[] {
+  return sections.map(section => {
+    if (section.id !== sectionId) return section
+    
+    return {
+      ...section,
+      groups: section.groups?.map(g => 
+        g.id === groupId ? { ...g, name: newName } : g
+      ) || [],
+    }
+  })
+}
+
+/**
+ * Move a group from one section to another
+ */
+export function moveGroup(
+  sections: FormSection[],
+  groupId: string,
+  fromSectionId: string,
+  toSectionId: string,
+  targetIndex?: number
+): FormSection[] {
+  const fromSection = sections.find(s => s.id === fromSectionId)
+  const group = fromSection?.groups?.find(g => g.id === groupId)
+  if (!group) return sections
+  
+  return sections.map(section => {
+    if (section.id === fromSectionId) {
+      return {
+        ...section,
+        placeholderIds: section.placeholderIds.filter(id => id !== `group-${groupId}`),
+        groups: section.groups?.filter(g => g.id !== groupId) || [],
+      }
+    }
+    if (section.id === toSectionId) {
+      const newIds = [...section.placeholderIds]
+      if (targetIndex !== undefined) {
+        newIds.splice(targetIndex, 0, `group-${groupId}`)
+      } else {
+        newIds.push(`group-${groupId}`)
+      }
+      return {
+        ...section,
+        placeholderIds: newIds,
+        groups: [...(section.groups || []), group],
+      }
+    }
+    return section
+  })
+}
+
+/**
+ * Reorder items within a section (handles both placeholders and groups)
+ */
+export function reorderSectionItems(
+  sections: FormSection[],
+  sectionId: string,
+  fromIndex: number,
+  toIndex: number
+): FormSection[] {
+  return sections.map(section => {
+    if (section.id !== sectionId) return section
+    
+    const newIds = [...section.placeholderIds]
+    const [removed] = newIds.splice(fromIndex, 1)
+    newIds.splice(toIndex, 0, removed)
+    
+    return {
+      ...section,
+      placeholderIds: newIds,
+    }
+  })
 }
