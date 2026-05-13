@@ -66,6 +66,14 @@ function GeneratePageContent() {
     }
   }, [templateId, templates])
 
+  // Get all unique placeholders from selected templates (must be defined before sections sync effect)
+  const allPlaceholders = useMemo(() => {
+    return selectedTemplates.flatMap(id => {
+      const template = templates.find(t => t.id === id)
+      return template?.placeholders || []
+    }).filter((p, i, arr) => arr.findIndex(x => x.name === p.name) === i)
+  }, [selectedTemplates, templates])
+
   // Sync sections when placeholders change
   useEffect(() => {
     if (allPlaceholders.length > 0 && sectionsLoaded) {
@@ -165,12 +173,6 @@ function GeneratePageContent() {
     
     return html
   }, [previewTemplate, documentHtml, formData, templates])
-
-  // Get all unique placeholders from selected templates
-  const allPlaceholders = selectedTemplates.flatMap(id => {
-    const template = templates.find(t => t.id === id)
-    return template?.placeholders || []
-  }).filter((p, i, arr) => arr.findIndex(x => x.name === p.name) === i)
 
   const toggleTemplate = (id: string) => {
     setSelectedTemplates(prev => 
