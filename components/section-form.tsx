@@ -5,8 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import {
   DndContext,
   DragOverlay,
-  closestCenter,
-  pointerWithin,
+  rectIntersection,
   KeyboardSensor,
   PointerSensor,
   TouchSensor,
@@ -112,11 +111,13 @@ interface DragData {
 function DroppableSectionArea({ 
   sectionId, 
   children, 
-  isEmpty 
+  isEmpty,
+  collapsed
 }: { 
   sectionId: string
   children?: React.ReactNode
   isEmpty?: boolean
+  collapsed?: boolean
 }) {
   const { setNodeRef, isOver } = useDroppable({
     id: `section-drop-${sectionId}`,
@@ -125,6 +126,19 @@ function DroppableSectionArea({
       sectionId,
     },
   })
+
+  // Collapsed sections show a minimal drop indicator
+  if (collapsed) {
+    return (
+      <div 
+        ref={setNodeRef}
+        className={cn(
+          "h-2 transition-all duration-200 mx-4 mb-2 rounded",
+          isOver ? "h-12 bg-primary/20 border-2 border-dashed border-primary" : "bg-transparent"
+        )}
+      />
+    )
+  }
 
   if (isEmpty) {
     return (
@@ -481,7 +495,7 @@ function SortableSection({
 
       {/* Section Content */}
       <AnimatePresence>
-        {section.isExpanded && (
+        {section.isExpanded ? (
           <motion.div
             initial={{ height: 0, opacity: 0 }}
             animate={{ height: 'auto', opacity: 1 }}
@@ -509,6 +523,9 @@ function SortableSection({
               </DroppableSectionArea>
             </div>
           </motion.div>
+        ) : (
+          // Collapsed section still needs a droppable area
+          <DroppableSectionArea sectionId={section.id} collapsed={true} />
         )}
       </AnimatePresence>
     </div>
@@ -603,44 +620,50 @@ export function SectionForm({
     })
   )
 
-  // Custom collision detection that handles both reordering and cross-section drops
+  // Simple and reliable collision detection
   const customCollisionDetection: CollisionDetection = useCallback((args) => {
-    // Get all collisions using pointerWithin (most accurate for nested droppables)
-    const pointerCollisions = pointerWithin(args)
+    // Get all intersecting rectangles
+    const collisions = rectIntersection(args)
     
-    console.log("[v0] Collisions detected:", pointerCollisions.map(c => c.id))
+    if (collisions.length === 0) {
+      return []
+    }
+
+    // Sort collisions by overlap ratio (highest first)
+    const sortedCollisions = [...collisions].sort((a, b) => {
+      const ratioA = a.data?.droppableContainer?.rect 
+        ? getOverlapRatio(args.collisionRect, a.data.droppableContainer.rect.current)
+        : 0
+      const ratioB = b.data?.droppableContainer?.rect
+        ? getOverlapRatio(args.collisionRect, b.data.droppableContainer.rect.current)
+        : 0
+      return ratioB - ratioA
+    })
+
+    // Find the best match with priority: placeholder > section-drop > section
+    const placeholder = sortedCollisions.find(c => String(c.id).startsWith('placeholder-'))
+    if (placeholder) return [placeholder]
     
-    // Priority 1: If pointer is directly over a placeholder, use that for reordering
-    const placeholderCollision = pointerCollisions.find(
-      collision => String(collision.id).startsWith('placeholder-')
+    const sectionDrop = sortedCollisions.find(c => String(c.id).startsWith('section-drop-'))
+    if (sectionDrop) return [sectionDrop]
+    
+    const section = sortedCollisions.find(c => 
+      String(c.id).startsWith('section-') && !String(c.id).startsWith('section-drop-')
     )
-    if (placeholderCollision) {
-      console.log("[v0] Using placeholder collision:", placeholderCollision.id)
-      return [placeholderCollision]
-    }
+    if (section) return [section]
 
-    // Priority 2: If pointer is over a section drop zone, use that for cross-section drops
-    const sectionDropZone = pointerCollisions.find(
-      collision => String(collision.id).startsWith('section-drop-')
-    )
-    if (sectionDropZone) {
-      console.log("[v0] Using section drop zone:", sectionDropZone.id)
-      return [sectionDropZone]
-    }
-
-    // Priority 3: If pointer is over a section (header), use that for section reordering
-    const sectionCollision = pointerCollisions.find(
-      collision => String(collision.id).startsWith('section-') && !String(collision.id).startsWith('section-drop-')
-    )
-    if (sectionCollision) {
-      console.log("[v0] Using section collision:", sectionCollision.id)
-      return [sectionCollision]
-    }
-
-    // Fallback: Use closestCenter for any remaining cases
-    console.log("[v0] Using closestCenter fallback")
-    return closestCenter(args)
+    return [sortedCollisions[0]]
   }, [])
+  
+  // Helper to calculate overlap ratio
+  function getOverlapRatio(rect1: DOMRect | null, rect2: ClientRect | null): number {
+    if (!rect1 || !rect2) return 0
+    const xOverlap = Math.max(0, Math.min(rect1.right, rect2.right) - Math.max(rect1.left, rect2.left))
+    const yOverlap = Math.max(0, Math.min(rect1.bottom, rect2.bottom) - Math.max(rect1.top, rect2.top))
+    const overlapArea = xOverlap * yOverlap
+    const rect1Area = rect1.width * rect1.height
+    return rect1Area > 0 ? overlapArea / rect1Area : 0
+  }
 
   // Filter placeholders by search query
   const filteredSections = useMemo(() => {
@@ -713,9 +736,7 @@ export function SectionForm({
 
   const handleDragStart = (event: DragStartEvent) => {
     const { active } = event
-    console.log("[v0] Drag started:", { id: active.id, data: active.data.current })
     setActiveId(active.id)
-    
     const data = active.data.current as DragData | undefined
     setActiveType(data?.type || null)
     saveToHistory()
@@ -723,59 +744,48 @@ export function SectionForm({
 
   const handleDragOver = (event: DragOverEvent) => {
     const { active, over } = event
-    console.log("[v0] Drag over:", { activeId: active.id, overId: over?.id, overData: over?.data.current })
     if (!over) return
 
     const activeData = active.data.current as DragData | undefined
     const overData = over.data.current as DragData | undefined
 
+    // Only handle placeholder dragging
     if (!activeData || activeData.type !== 'placeholder') return
 
     const activeSectionId = activeData.sectionId
-    let overSectionId: string | undefined
-
-    // Check if dropping on a placeholder - get its section
-    if (overData?.type === 'placeholder') {
-      overSectionId = overData.sectionId
-    } 
-    // Check if dropping on a section drop zone (content area)
-    else if (String(over.id).startsWith('section-drop-')) {
-      overSectionId = String(over.id).replace('section-drop-', '')
-    }
-    // Check if dropping on a section header
-    else if (overData?.type === 'section') {
-      overSectionId = overData.sectionId
-    }
-    // Fallback: check if over.id is a section id
-    else if (String(over.id).startsWith('section-')) {
-      overSectionId = String(over.id).replace('section-', '')
-    }
-
-    console.log("[v0] DragOver check:", { activeSectionId, overSectionId, same: activeSectionId === overSectionId })
-    
-    // Skip if same section or no valid target
-    if (!activeSectionId || !overSectionId || activeSectionId === overSectionId) return
-
-    // Move placeholder to new section
     const placeholderId = activeData.placeholderId
-    if (!placeholderId) return
+    if (!activeSectionId || !placeholderId) return
 
-    console.log("[v0] DragOver - Moving placeholder:", { placeholderId, from: activeSectionId, to: overSectionId })
+    // Determine target section
+    let targetSectionId: string | undefined
+    const overId = String(over.id)
 
-    // Update the active data's sectionId so subsequent drag-over events work correctly
-    if (active.data.current) {
-      (active.data.current as DragData).sectionId = overSectionId
+    if (overData?.type === 'placeholder' && overData.sectionId) {
+      targetSectionId = overData.sectionId
+    } else if (overId.startsWith('section-drop-')) {
+      targetSectionId = overId.replace('section-drop-', '')
+    } else if (overData?.type === 'section' && overData.sectionId) {
+      targetSectionId = overData.sectionId
+    } else if (overId.startsWith('section-') && !overId.startsWith('section-drop-')) {
+      targetSectionId = overId.replace('section-', '')
     }
 
-    onSectionsChange(
-      movePlaceholder(sections, placeholderId, activeSectionId, overSectionId)
-    )
-    onAutoGroupedChange(false)
+    console.log("[v0] DragOver NEW:", { overId, targetSectionId, activeSectionId, different: targetSectionId !== activeSectionId })
+
+    // Move to new section if different
+    if (targetSectionId && targetSectionId !== activeSectionId) {
+      console.log("[v0] Moving to new section:", targetSectionId)
+      // Update active data for subsequent events
+      if (active.data.current) {
+        (active.data.current as DragData).sectionId = targetSectionId
+      }
+      onSectionsChange(movePlaceholder(sections, placeholderId, activeSectionId, targetSectionId))
+      onAutoGroupedChange(false)
+    }
   }
 
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event
-    console.log("[v0] Drag end:", { activeId: active.id, overId: over?.id, overData: over?.data.current })
     setActiveId(null)
     setActiveType(null)
 
@@ -783,7 +793,6 @@ export function SectionForm({
 
     const activeData = active.data.current as DragData | undefined
     const overData = over.data.current as DragData | undefined
-
     if (!activeData) return
 
     // Handle section reordering
@@ -791,7 +800,7 @@ export function SectionForm({
       const activeIndex = sections.findIndex(s => s.id === activeData.sectionId)
       const overIndex = sections.findIndex(s => s.id === overData.sectionId)
 
-      if (activeIndex !== overIndex) {
+      if (activeIndex !== -1 && overIndex !== -1 && activeIndex !== overIndex) {
         const newSections = arrayMove(sections, activeIndex, overIndex).map((s, i) => ({
           ...s,
           order: i,
@@ -802,69 +811,26 @@ export function SectionForm({
       return
     }
 
-    // Handle placeholder reordering
-    if (activeData.type === 'placeholder') {
+    // Handle placeholder reordering within same section
+    if (activeData.type === 'placeholder' && overData?.type === 'placeholder') {
       const activePlaceholderId = activeData.placeholderId
-      if (!activePlaceholderId) return
-
-      // Case 1: Dropping on another placeholder
-      if (overData?.type === 'placeholder') {
-        const overPlaceholderId = overData.placeholderId
-        if (!overPlaceholderId) return
-
-        // Same section - reorder
-        if (activeData.sectionId === overData.sectionId) {
-          const sectionIndex = sections.findIndex(s => s.id === activeData.sectionId)
-          if (sectionIndex === -1) return
-
-          const section = sections[sectionIndex]
-          const activeIndex = section.placeholderIds.indexOf(activePlaceholderId)
-          const overIndex = section.placeholderIds.indexOf(overPlaceholderId)
-
-          if (activeIndex !== -1 && overIndex !== -1 && activeIndex !== overIndex) {
-            const newPlaceholderIds = arrayMove(section.placeholderIds, activeIndex, overIndex)
-            const newSections = [...sections]
-            newSections[sectionIndex] = { ...section, placeholderIds: newPlaceholderIds }
-            onSectionsChange(newSections)
-            onAutoGroupedChange(false)
-          }
-        } 
-        // Different section - move to new section at target position
-        else {
-          const fromSectionIndex = sections.findIndex(s => s.id === activeData.sectionId)
-          const toSectionIndex = sections.findIndex(s => s.id === overData.sectionId)
-          if (fromSectionIndex === -1 || toSectionIndex === -1) return
-
-          const toSection = sections[toSectionIndex]
-          const targetIndex = toSection.placeholderIds.indexOf(overPlaceholderId)
-          
-          onSectionsChange(
-            movePlaceholder(sections, activePlaceholderId, activeData.sectionId!, overData.sectionId!, targetIndex)
-          )
-          onAutoGroupedChange(false)
-        }
-        return
-      }
-
-      // Case 2: Dropping on a section (header or drop zone)
-      let targetSectionId: string | undefined
-      const overId = String(over.id)
+      const overPlaceholderId = overData.placeholderId
       
-      if (overId.startsWith('section-drop-')) {
-        targetSectionId = overId.replace('section-drop-', '')
-      } else if (overData?.type === 'section' && overData?.sectionId) {
-        targetSectionId = overData.sectionId
-      } else if (overId.startsWith('section-')) {
-        targetSectionId = overId.replace('section-', '')
-      }
+      if (!activePlaceholderId || !overPlaceholderId) return
+      if (activeData.sectionId !== overData.sectionId) return // Cross-section handled by dragOver
 
-      console.log("[v0] Case 2 - Drop on section:", { targetSectionId, activeSectionId: activeData.sectionId })
-      
-      if (targetSectionId && targetSectionId !== activeData.sectionId) {
-        console.log("[v0] Moving placeholder to section:", targetSectionId)
-        onSectionsChange(
-          movePlaceholder(sections, activePlaceholderId, activeData.sectionId!, targetSectionId)
-        )
+      const sectionIndex = sections.findIndex(s => s.id === activeData.sectionId)
+      if (sectionIndex === -1) return
+
+      const section = sections[sectionIndex]
+      const activeIndex = section.placeholderIds.indexOf(activePlaceholderId)
+      const overIndex = section.placeholderIds.indexOf(overPlaceholderId)
+
+      if (activeIndex !== -1 && overIndex !== -1 && activeIndex !== overIndex) {
+        const newPlaceholderIds = arrayMove(section.placeholderIds, activeIndex, overIndex)
+        const newSections = [...sections]
+        newSections[sectionIndex] = { ...section, placeholderIds: newPlaceholderIds }
+        onSectionsChange(newSections)
         onAutoGroupedChange(false)
       }
     }
