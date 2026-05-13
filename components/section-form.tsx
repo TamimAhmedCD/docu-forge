@@ -17,6 +17,7 @@ import {
   DragOverEvent,
   UniqueIdentifier,
   MeasuringStrategy,
+  useDroppable,
 } from '@dnd-kit/core'
 import {
   arrayMove,
@@ -104,6 +105,52 @@ interface DragData {
   type: DragItemType
   sectionId?: string
   placeholderId?: string
+}
+
+// Droppable Section Content Wrapper - makes the entire section content area a valid drop target
+function DroppableSectionContent({ 
+  sectionId, 
+  children,
+  isEmpty 
+}: { 
+  sectionId: string
+  children: React.ReactNode
+  isEmpty?: boolean
+}) {
+  const { setNodeRef, isOver } = useDroppable({
+    id: `section-drop-${sectionId}`,
+    data: {
+      type: 'section' as DragItemType,
+      sectionId,
+    },
+  })
+
+  if (isEmpty) {
+    return (
+      <div 
+        ref={setNodeRef}
+        className={cn(
+          "text-center py-8 text-muted-foreground border-2 border-dashed rounded-lg transition-colors",
+          isOver ? "border-primary bg-primary/10" : "border-border"
+        )}
+      >
+        <p>No fields in this section</p>
+        <p className="text-sm">Drag fields here to add them</p>
+      </div>
+    )
+  }
+
+  return (
+    <div 
+      ref={setNodeRef}
+      className={cn(
+        "rounded-lg transition-colors",
+        isOver && "ring-2 ring-primary/30 bg-primary/5"
+      )}
+    >
+      {children}
+    </div>
+  )
 }
 
 // Sortable Field Component
@@ -441,12 +488,10 @@ function SortableSection({
             className="overflow-hidden"
           >
             <div className="p-4 min-h-[80px]">
-              {sectionPlaceholders.length === 0 ? (
-                <div className="text-center py-8 text-muted-foreground border-2 border-dashed border-border rounded-lg">
-                  <p>No fields in this section</p>
-                  <p className="text-sm">Drag fields here to add them</p>
-                </div>
-              ) : (
+              <DroppableSectionContent 
+                sectionId={section.id} 
+                isEmpty={sectionPlaceholders.length === 0}
+              >
                 <SortableContext items={placeholderIds} strategy={verticalListSortingStrategy}>
                   <div className="grid grid-cols-6 gap-3">
                     {sectionPlaceholders.map((placeholder) => (
@@ -462,7 +507,7 @@ function SortableSection({
                     ))}
                   </div>
                 </SortableContext>
-              )}
+              </DroppableSectionContent>
             </div>
           </motion.div>
         )}
@@ -657,13 +702,18 @@ export function SectionForm({
     else if (overData?.type === 'section') {
       overSectionId = overData.sectionId
     }
-    // Also check if the over.id itself is a section id
+    // Also check if the over.id itself is a section id or section drop zone
     else {
       const overId = String(over.id)
-      if (overId.startsWith('section-')) {
+      if (overId.startsWith('section-drop-')) {
+        // This is the droppable empty section zone
+        overSectionId = overId.replace('section-drop-', '')
+      } else if (overId.startsWith('section-')) {
         overSectionId = overId.replace('section-', '')
       }
     }
+
+
 
     if (!activeSectionId || !overSectionId || activeSectionId === overSectionId) return
 

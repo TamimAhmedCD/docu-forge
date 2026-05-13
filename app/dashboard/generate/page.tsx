@@ -67,8 +67,8 @@ function GeneratePageContent() {
     }
   }, [templateId, templates])
 
-  // Local placeholder width overrides
-  const [placeholderWidths, setPlaceholderWidths] = useState<Record<string, FieldWidth>>({})
+  // Persisted placeholder width overrides using the width storage hook
+  const { widths: storedWidths, setWidth: setStoredWidth, isLoaded: widthsLoaded } = useWidthStorage()
 
   // Get all unique placeholders from selected templates with width overrides
   const allPlaceholders = useMemo(() => {
@@ -77,16 +77,16 @@ function GeneratePageContent() {
       return template?.placeholders || []
     }).filter((p, i, arr) => arr.findIndex(x => x.name === p.name) === i)
     
-    // Apply local width overrides
+    // Apply persisted width overrides from storage
     return basePlaceholders.map(p => ({
       ...p,
-      width: placeholderWidths[p.id] || p.width
+      width: storedWidths[p.id] || p.width
     }))
-  }, [selectedTemplates, templates, placeholderWidths])
+  }, [selectedTemplates, templates, storedWidths])
 
-  // Handle placeholder width change
+  // Handle placeholder width change - persists to localStorage
   const handlePlaceholderWidthChange = (id: string, width: FieldWidth) => {
-    setPlaceholderWidths(prev => ({ ...prev, [id]: width }))
+    setStoredWidth(id, width)
   }
 
   // Sync sections when placeholders change
@@ -121,7 +121,6 @@ function GeneratePageContent() {
       
       if (template?.fileContent) {
         try {
-          console.log('[v0] Starting HTML extraction for template:', previewTemplate)
           // Create a promise with timeout to prevent hanging on large files
           const extractPromise = mammoth.convertToHtml({ arrayBuffer: template.fileContent })
           const timeoutPromise = new Promise((_, reject) => 
@@ -129,11 +128,9 @@ function GeneratePageContent() {
           )
           
           const result = await Promise.race([extractPromise, timeoutPromise]) as any
-          console.log('[v0] HTML extraction successful')
           setDocumentHtml(prev => ({ ...prev, [previewTemplate]: result.value }))
           setLoadingPreview(false)
-        } catch (error) {
-          console.error('[v0] Failed to extract HTML:', error)
+        } catch {
           // Generate basic text preview as fallback
           try {
             const textResult = await mammoth.extractRawText({ arrayBuffer: template.fileContent })

@@ -123,10 +123,11 @@ export function syncSectionsWithPlaceholders(
     .map(p => p.id)
   
   // Remove placeholders that no longer exist from sections
+  // Note: Empty sections are preserved - they are NOT auto-deleted
   const updatedSections = existingSections.map(section => ({
     ...section,
     placeholderIds: section.placeholderIds.filter(id => newPlaceholderIds.has(id)),
-  })).filter(section => section.placeholderIds.length > 0)
+  }))
   
   if (newIds.length === 0) {
     return updatedSections
@@ -175,6 +176,7 @@ export function syncSectionsWithPlaceholders(
 
 /**
  * Move a placeholder from one section to another
+ * Note: Empty sections are preserved - they are NOT auto-deleted
  */
 export function movePlaceholder(
   sections: FormSection[],
@@ -192,10 +194,13 @@ export function movePlaceholder(
     }
     if (section.id === toSectionId) {
       const newIds = [...section.placeholderIds]
-      if (targetIndex !== undefined) {
-        newIds.splice(targetIndex, 0, placeholderId)
-      } else {
-        newIds.push(placeholderId)
+      // Ensure placeholder is not already in the section
+      if (!newIds.includes(placeholderId)) {
+        if (targetIndex !== undefined) {
+          newIds.splice(targetIndex, 0, placeholderId)
+        } else {
+          newIds.push(placeholderId)
+        }
       }
       return {
         ...section,
@@ -203,7 +208,8 @@ export function movePlaceholder(
       }
     }
     return section
-  }).filter(section => section.placeholderIds.length > 0 || section.name === 'Other Fields')
+  })
+  // Empty sections are preserved - no filtering
 }
 
 /**
