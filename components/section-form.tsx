@@ -613,20 +613,12 @@ export function SectionForm({
     })
   )
 
-  // Custom collision detection that prioritizes section drop zones
+  // Custom collision detection - prioritizes placeholders for reordering, sections for cross-section moves
   const customCollisionDetection: CollisionDetection = useCallback((args) => {
-    // First, check for pointer within droppables (most accurate for section drops)
+    // First check pointer collisions (most accurate)
     const pointerCollisions = pointerWithin(args)
     
-    // Find section drop zones first (they have priority)
-    const sectionDropZone = pointerCollisions.find(
-      collision => String(collision.id).startsWith('section-drop-')
-    )
-    if (sectionDropZone) {
-      return [sectionDropZone]
-    }
-
-    // Then check for placeholder collisions
+    // PRIORITY 1: Placeholder collisions (for field-to-field reordering)
     const placeholderCollision = pointerCollisions.find(
       collision => String(collision.id).startsWith('placeholder-')
     )
@@ -634,10 +626,34 @@ export function SectionForm({
       return [placeholderCollision]
     }
 
-    // Fall back to rect intersection for better detection
+    // PRIORITY 2: Section drop zones (for moving to different/empty sections)
+    const sectionDropZone = pointerCollisions.find(
+      collision => String(collision.id).startsWith('section-drop-')
+    )
+    if (sectionDropZone) {
+      return [sectionDropZone]
+    }
+
+    // PRIORITY 3: Section headers (for section reordering)
+    const sectionCollision = pointerCollisions.find(
+      collision => String(collision.id).startsWith('section-')
+    )
+    if (sectionCollision) {
+      return [sectionCollision]
+    }
+
+    // Fall back to rect intersection
     const rectCollisions = rectIntersection(args)
     
-    // Prioritize section drop zones in rect collisions too
+    // Check placeholders first in rect collisions
+    const placeholderRectCollision = rectCollisions.find(
+      collision => String(collision.id).startsWith('placeholder-')
+    )
+    if (placeholderRectCollision) {
+      return [placeholderRectCollision]
+    }
+
+    // Then section drop zones
     const sectionRectCollision = rectCollisions.find(
       collision => String(collision.id).startsWith('section-drop-')
     )
@@ -645,8 +661,8 @@ export function SectionForm({
       return [sectionRectCollision]
     }
 
-    // If no section drop zones, use closest corners as fallback
-    return closestCorners(args)
+    // Use closest center for final fallback (better for reordering)
+    return closestCenter(args)
   }, [])
 
   // Filter placeholders by search query
@@ -805,21 +821,57 @@ export function SectionForm({
       return
     }
 
-    // Handle placeholder reordering within same section
-    if (activeData.type === 'placeholder' && overData?.type === 'placeholder') {
-      if (activeData.sectionId === overData.sectionId) {
-        const sectionIndex = sections.findIndex(s => s.id === activeData.sectionId)
-        if (sectionIndex === -1) return
+    // Handle placeholder reordering
+    if (activeData.type === 'placeholder') {
+      const activePlaceholderId = activeData.placeholderId
+      if (!activePlaceholderId) return
 
-        const section = sections[sectionIndex]
-        const activeIndex = section.placeholderIds.indexOf(activeData.placeholderId!)
-        const overIndex = section.placeholderIds.indexOf(overData.placeholderId!)
+      // Case 1: Dropping on another placeholder
+      if (overData?.type === 'placeholder') {
+        const overPlaceholderId = overData.placeholderId
+        if (!overPlaceholderId) return
 
-        if (activeIndex !== overIndex) {
-          const newPlaceholderIds = arrayMove(section.placeholderIds, activeIndex, overIndex)
-          const newSections = [...sections]
-          newSections[sectionIndex] = { ...section, placeholderIds: newPlaceholderIds }
-          onSectionsChange(newSections)
+        // Same section - reorder
+        if (activeData.sectionId === overData.sectionId) {
+          const sectionIndex = sections.findIndex(s => s.id === activeData.sectionId)
+          if (sectionIndex === -1) return
+
+          const section = sections[sectionIndex]
+          const activeIndex = section.placeholderIds.indexOf(activePlaceholderId)
+          const overIndex = section.placeholderIds.indexOf(overPlaceholderId)
+
+          if (activeIndex !== -1 && overIndex !== -1 && activeIndex !== overIndex) {
+            const newPlaceholderIds = arrayMove(section.placeholderIds, activeIndex, overIndex)
+            const newSections = [...sections]
+            newSections[sectionIndex] = { ...section, placeholderIds: newPlaceholderIds }
+            onSectionsChange(newSections)
+            onAutoGroupedChange(false)
+          }
+        } 
+        // Different section - move to new section at target position
+        else {
+          const fromSectionIndex = sections.findIndex(s => s.id === activeData.sectionId)
+          const toSectionIndex = sections.findIndex(s => s.id === overData.sectionId)
+          if (fromSectionIndex === -1 || toSectionIndex === -1) return
+
+          const toSection = sections[toSectionIndex]
+          const targetIndex = toSection.placeholderIds.indexOf(overPlaceholderId)
+          
+          onSectionsChange(
+            movePlaceholder(sections, activePlaceholderId, activeData.sectionId!, overData.sectionId!, targetIndex)
+          )
+          onAutoGroupedChange(false)
+        }
+        return
+      }
+
+      // Case 2: Dropping on a section drop zone
+      if (overData?.type === 'section' || String(over.id).startsWith('section-drop-')) {
+        const targetSectionId = overData?.sectionId || String(over.id).replace('section-drop-', '')
+        if (targetSectionId && targetSectionId !== activeData.sectionId) {
+          onSectionsChange(
+            movePlaceholder(sections, activePlaceholderId, activeData.sectionId!, targetSectionId)
+          )
           onAutoGroupedChange(false)
         }
       }
