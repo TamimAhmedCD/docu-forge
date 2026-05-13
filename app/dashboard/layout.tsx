@@ -29,7 +29,8 @@ export default function DashboardLayout({
 }: {
   children: React.ReactNode
 }) {
-  const [sidebarOpen, setSidebarOpen] = useState(false) // Start collapsed
+  const [sidebarOpen, setSidebarOpen] = useState(true) // Start expanded
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false) // Collapse to icons
   const pathname = usePathname()
 
   return (
@@ -48,28 +49,51 @@ export default function DashboardLayout({
       </AnimatePresence>
 
       {/* Sidebar */}
-      <aside
+      <motion.aside
+        initial={false}
+        animate={{ width: sidebarCollapsed ? 80 : 256 }}
+        transition={{ duration: 0.3 }}
         className={cn(
-          'fixed inset-y-0 left-0 z-50 flex w-64 flex-col border-r border-sidebar-border bg-sidebar transition-transform duration-300 lg:static lg:translate-x-0',
+          'fixed inset-y-0 left-0 z-50 flex flex-col border-r border-sidebar-border bg-sidebar lg:static lg:translate-x-0',
           sidebarOpen ? 'translate-x-0' : '-translate-x-full'
         )}
       >
         {/* Logo */}
         <div className="flex h-16 items-center justify-between border-b border-sidebar-border px-4">
-          <Link href="/" className="flex items-center gap-2">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-sidebar-primary">
+          <Link href="/" className="flex items-center gap-2 overflow-hidden">
+            <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-sidebar-primary">
               <FileText className="h-4 w-4 text-sidebar-primary-foreground" />
             </div>
-            <span className="text-lg font-semibold text-sidebar-foreground">DocuForge</span>
+            {!sidebarCollapsed && (
+              <motion.span
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.2 }}
+                className="whitespace-nowrap text-lg font-semibold text-sidebar-foreground"
+              >
+                DocuForge
+              </motion.span>
+            )}
           </Link>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => setSidebarOpen(false)}
-            className="text-sidebar-foreground lg:hidden"
-          >
-            <X className="h-5 w-5" />
-          </Button>
+          <div className="flex items-center gap-1">
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
+              className="hidden text-sidebar-foreground lg:flex"
+            >
+              <Menu className="h-4 w-4" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setSidebarOpen(false)}
+              className="text-sidebar-foreground lg:hidden"
+            >
+              <X className="h-5 w-5" />
+            </Button>
+          </div>
         </div>
 
         {/* Navigation */}
@@ -77,36 +101,62 @@ export default function DashboardLayout({
           {navigation.map((item) => {
             const isActive = pathname === item.href
             return (
-              <Link
-                key={item.name}
-                href={item.href}
-                onClick={() => setSidebarOpen(false)}
-                className={cn(
-                  'flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors',
-                  isActive
-                    ? 'bg-sidebar-accent text-sidebar-accent-foreground'
-                    : 'text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground'
-                )}
-              >
-                <item.icon className="h-4 w-4" />
-                {item.name}
-                {isActive && (
-                  <ChevronRight className="ml-auto h-4 w-4" />
-                )}
-              </Link>
+              <motion.div key={item.name} layout>
+                <Link
+                  href={item.href}
+                  onClick={() => setSidebarOpen(false)}
+                  className={cn(
+                    'flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors',
+                    isActive
+                      ? 'bg-sidebar-accent text-sidebar-accent-foreground'
+                      : 'text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground',
+                    sidebarCollapsed && 'justify-center'
+                  )}
+                  title={sidebarCollapsed ? item.name : undefined}
+                >
+                  <item.icon className="h-4 w-4 flex-shrink-0" />
+                  {!sidebarCollapsed && (
+                    <motion.span
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      exit={{ opacity: 0 }}
+                      transition={{ duration: 0.2 }}
+                      className="flex-1"
+                    >
+                      {item.name}
+                    </motion.span>
+                  )}
+                  {!sidebarCollapsed && isActive && (
+                    <motion.div
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      exit={{ opacity: 0 }}
+                    >
+                      <ChevronRight className="h-4 w-4" />
+                    </motion.div>
+                  )}
+                </Link>
+              </motion.div>
             )
           })}
         </nav>
 
         {/* Bottom section */}
         <div className="border-t border-sidebar-border p-4">
-          <div className="rounded-lg bg-sidebar-accent/50 p-4">
-            <p className="text-xs text-sidebar-foreground/70">
-              All processing happens locally in your browser. No data is sent to any server.
-            </p>
-          </div>
+          {!sidebarCollapsed && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="rounded-lg bg-sidebar-accent/50 p-4"
+            >
+              <p className="text-xs text-sidebar-foreground/70">
+                All processing happens locally in your browser. No data is sent to any server.
+              </p>
+            </motion.div>
+          )}
         </div>
-      </aside>
+      </motion.aside>
 
       {/* Main content */}
       <div className="flex flex-1 flex-col">
