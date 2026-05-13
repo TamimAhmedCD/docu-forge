@@ -1,7 +1,7 @@
 'use client'
 
 import { useParams, useRouter } from 'next/navigation'
-import { useState, useEffect, use } from 'react'
+import { useState, useEffect, use, useCallback } from 'react'
 import { motion } from 'framer-motion'
 import {
   ArrowLeft,
@@ -11,8 +11,6 @@ import {
   RefreshCw,
   FileText,
   Settings2,
-  Menu,
-  X,
 } from 'lucide-react'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
@@ -26,6 +24,16 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import { useTemplates } from '@/hooks/use-templates'
 import { Placeholder, FieldType, Template } from '@/types'
 import { toast } from 'sonner'
@@ -48,22 +56,51 @@ export default function TemplateEditorPage({ params }: { params: Promise<{ id: s
   const { getTemplate, updatePlaceholders } = useTemplates()
   const [template, setTemplate] = useState<Template | null>(null)
   const [placeholders, setPlaceholders] = useState<Placeholder[]>([])
+  const [originalPlaceholders, setOriginalPlaceholders] = useState<Placeholder[]>([])
   const [isAutoMode, setIsAutoMode] = useState(true)
   const [selectedPlaceholder, setSelectedPlaceholder] = useState<string | null>(null)
   const [documentText, setDocumentText] = useState('')
-  const [sidebarOpen, setSidebarOpen] = useState(true)
+  const [showUnsavedDialog, setShowUnsavedDialog] = useState(false)
 
   useEffect(() => {
     const t = getTemplate(resolvedParams.id)
     if (t) {
       setTemplate(t)
       setPlaceholders(t.placeholders)
+      setOriginalPlaceholders(JSON.parse(JSON.stringify(t.placeholders)))
       // Extract document text for preview
       mammoth.extractRawText({ arrayBuffer: t.fileContent }).then((result) => {
         setDocumentText(result.value)
       })
     }
   }, [resolvedParams.id, getTemplate])
+
+  // Check if there are unsaved changes
+  const hasUnsavedChanges = useCallback(() => {
+    return JSON.stringify(placeholders) !== JSON.stringify(originalPlaceholders)
+  }, [placeholders, originalPlaceholders])
+
+  const handleBack = () => {
+    if (hasUnsavedChanges()) {
+      setShowUnsavedDialog(true)
+    } else {
+      router.push('/dashboard/templates')
+    }
+  }
+
+  const handleDiscard = () => {
+    setShowUnsavedDialog(false)
+    router.push('/dashboard/templates')
+  }
+
+  const handleSaveAndLeave = () => {
+    if (template) {
+      updatePlaceholders(template.id, placeholders)
+      toast.success('Template saved')
+    }
+    setShowUnsavedDialog(false)
+    router.push('/dashboard/templates')
+  }
 
   const handleRedetect = async () => {
     if (!template) return
@@ -101,8 +138,8 @@ export default function TemplateEditorPage({ params }: { params: Promise<{ id: s
   const handleSave = () => {
     if (!template) return
     updatePlaceholders(template.id, placeholders)
+    setOriginalPlaceholders(JSON.parse(JSON.stringify(placeholders)))
     toast.success('Template saved')
-    router.push('/dashboard/templates')
   }
 
   if (!template) {
@@ -134,18 +171,8 @@ export default function TemplateEditorPage({ params }: { params: Promise<{ id: s
       {/* Header */}
       <div className="flex items-center justify-between border-b border-border px-6 py-4">
         <div className="flex items-center gap-4">
-          <Link href="/dashboard/templates">
-            <Button variant="ghost" size="icon">
-              <ArrowLeft className="h-5 w-5" />
-            </Button>
-          </Link>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => setSidebarOpen(!sidebarOpen)}
-            className="hidden lg:flex"
-          >
-            {sidebarOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+          <Button variant="ghost" size="icon" onClick={handleBack}>
+            <ArrowLeft className="h-5 w-5" />
           </Button>
           <div>
             <h1 className="text-lg font-semibold text-foreground">
@@ -183,23 +210,15 @@ export default function TemplateEditorPage({ params }: { params: Promise<{ id: s
       {/* Content */}
       <div className="flex flex-1 overflow-hidden">
         {/* Placeholders Sidebar */}
-        <motion.div
-          initial={false}
-          animate={{ width: sidebarOpen ? 320 : 0 }}
-          transition={{ duration: 0.2 }}
-          className={cn(
-            "flex-shrink-0 border-r border-border bg-muted/20 overflow-hidden",
-            !sidebarOpen && "hidden"
-          )}
-        >
-          <div className="flex items-center justify-between border-b border-border p-4 w-80">
+        <div className="w-80 flex-shrink-0 border-r border-border bg-muted/20">
+          <div className="flex items-center justify-between border-b border-border p-4">
             <h2 className="font-semibold text-foreground">Placeholders</h2>
             <Button variant="ghost" size="sm" onClick={addPlaceholder}>
               <Plus className="mr-1 h-4 w-4" />
               Add
             </Button>
           </div>
-          <div className="h-[calc(100vh-11rem)] overflow-y-auto overflow-x-hidden p-4 w-80">
+          <div className="h-[calc(100vh-11rem)] overflow-y-auto overflow-x-hidden p-4">
             <div className="space-y-2">
               {placeholders.map((placeholder) => (
                 <motion.div
@@ -250,7 +269,7 @@ export default function TemplateEditorPage({ params }: { params: Promise<{ id: s
               )}
             </div>
           </div>
-        </motion.div>
+        </div>
 
         {/* Editor Panel */}
         <div className="flex-1 overflow-auto p-6">
@@ -395,6 +414,22 @@ export default function TemplateEditorPage({ params }: { params: Promise<{ id: s
           </div>
         </div>
       </div>
+
+      {/* Unsaved Changes Dialog */}
+      <AlertDialog open={showUnsavedDialog} onOpenChange={setShowUnsavedDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Unsaved Changes</AlertDialogTitle>
+            <AlertDialogDescription>
+              You have unsaved changes. Do you want to save them before leaving?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={handleDiscard}>Discard</AlertDialogCancel>
+            <AlertDialogAction onClick={handleSaveAndLeave}>Save Changes</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }
