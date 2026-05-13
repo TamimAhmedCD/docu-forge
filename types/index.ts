@@ -2,6 +2,8 @@ export type PlaceholderFormat = '{{}}' | '[]'
 
 export type FieldType = 'text' | 'textarea' | 'number' | 'date' | 'email' | 'select'
 
+export type PlaceholderSyncStatus = 'synced' | 'new' | 'removed' | 'modified'
+
 export interface Placeholder {
   id: string
   name: string
@@ -10,6 +12,15 @@ export interface Placeholder {
   required: boolean
   options?: string[] // For select type
   defaultValue?: string
+  syncStatus?: PlaceholderSyncStatus
+}
+
+export interface PlaceholderSyncResult {
+  placeholders: Placeholder[]
+  syncedCount: number
+  newCount: number
+  removedCount: number
+  removedPlaceholders: Placeholder[]
 }
 
 export interface Template {

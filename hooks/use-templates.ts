@@ -2,9 +2,10 @@
 
 import { useSyncExternalStore, useCallback } from 'react'
 import * as store from '@/lib/template-store'
-import { Template, Placeholder } from '@/types'
+import { Template, Placeholder, PlaceholderSyncResult } from '@/types'
 import mammoth from 'mammoth'
 import { detectPlaceholders } from '@/lib/placeholder-utils'
+import { syncPlaceholders, clearSyncStatus } from '@/lib/placeholder-sync'
 
 export function useTemplates() {
   const templates = useSyncExternalStore(
@@ -47,7 +48,48 @@ export function useTemplates() {
   }, [])
 
   const updatePlaceholders = useCallback((templateId: string, placeholders: Placeholder[]) => {
-    store.updateTemplate(templateId, { placeholders })
+    // Clear sync status before saving
+    const cleanedPlaceholders = clearSyncStatus(placeholders)
+    store.updateTemplate(templateId, { placeholders: cleanedPlaceholders })
+  }, [])
+
+  /**
+   * Update template file with smart placeholder sync
+   * Preserves existing placeholder configurations and form data
+   */
+  const updateTemplateFile = useCallback(async (
+    templateId: string,
+    file: File
+  ): Promise<PlaceholderSyncResult | null> => {
+    const existingTemplate = store.getTemplate(templateId)
+    if (!existingTemplate) return null
+
+    const fileContent = await file.arrayBuffer()
+    
+    // Extract text from new DOCX
+    const result = await mammoth.extractRawText({ arrayBuffer: fileContent })
+    
+    // Sync placeholders with existing configuration
+    const syncResult = syncPlaceholders(existingTemplate.placeholders, result.value)
+    
+    // Update template with new file and synced placeholders
+    store.updateTemplate(templateId, {
+      name: file.name,
+      file: new File([fileContent], file.name, { type: file.type }),
+      fileContent,
+      placeholders: syncResult.placeholders,
+      updatedAt: new Date(),
+    })
+
+    return syncResult
+  }, [])
+
+  /**
+   * Save placeholders with cleared sync status
+   */
+  const savePlaceholdersClean = useCallback((templateId: string, placeholders: Placeholder[]) => {
+    const cleanedPlaceholders = clearSyncStatus(placeholders)
+    store.updateTemplate(templateId, { placeholders: cleanedPlaceholders })
   }, [])
 
   return {
@@ -57,5 +99,7 @@ export function useTemplates() {
     removeTemplate,
     getTemplate,
     updatePlaceholders,
+    updateTemplateFile,
+    savePlaceholdersClean,
   }
 }

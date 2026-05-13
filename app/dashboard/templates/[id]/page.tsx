@@ -11,6 +11,8 @@ import {
   RefreshCw,
   FileText,
   Settings2,
+  Upload,
+  GitCompare,
 } from 'lucide-react'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
@@ -35,7 +37,9 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import { useTemplates } from '@/hooks/use-templates'
-import { Placeholder, FieldType, Template } from '@/types'
+import { Placeholder, FieldType, Template, PlaceholderSyncResult } from '@/types'
+import { PlaceholderSyncPanel } from '@/components/placeholder-sync-panel'
+import { Badge } from '@/components/ui/badge'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import mammoth from 'mammoth'
@@ -53,14 +57,18 @@ const fieldTypes: { value: FieldType; label: string }[] = [
 export default function TemplateEditorPage({ params }: { params: Promise<{ id: string }> }) {
   const resolvedParams = use(params)
   const router = useRouter()
-  const { getTemplate, updatePlaceholders } = useTemplates()
+  const { getTemplate, updatePlaceholders, updateTemplateFile, savePlaceholdersClean } = useTemplates()
   const [template, setTemplate] = useState<Template | null>(null)
   const [placeholders, setPlaceholders] = useState<Placeholder[]>([])
   const [originalPlaceholders, setOriginalPlaceholders] = useState<Placeholder[]>([])
+  const [removedPlaceholders, setRemovedPlaceholders] = useState<Placeholder[]>([])
   const [isAutoMode, setIsAutoMode] = useState(true)
   const [selectedPlaceholder, setSelectedPlaceholder] = useState<string | null>(null)
   const [documentText, setDocumentText] = useState('')
   const [showUnsavedDialog, setShowUnsavedDialog] = useState(false)
+  const [showSyncPanel, setShowSyncPanel] = useState(false)
+  const [syncResult, setSyncResult] = useState<PlaceholderSyncResult | null>(null)
+  const [isUploading, setIsUploading] = useState(false)
 
   useEffect(() => {
     const t = getTemplate(resolvedParams.id)
@@ -107,7 +115,55 @@ export default function TemplateEditorPage({ params }: { params: Promise<{ id: s
     const result = await mammoth.extractRawText({ arrayBuffer: template.fileContent })
     const detected = detectPlaceholders(result.value)
     setPlaceholders(detected)
+    setRemovedPlaceholders([])
+    setSyncResult(null)
+    setShowSyncPanel(false)
     toast.success(`Found ${detected.length} placeholders`)
+  }
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file || !template) return
+
+    if (!file.name.endsWith('.docx')) {
+      toast.error('Please upload a DOCX file')
+      return
+    }
+
+    setIsUploading(true)
+    try {
+      const result = await updateTemplateFile(template.id, file)
+      
+      if (result) {
+        setSyncResult(result)
+        setPlaceholders(result.placeholders)
+        setRemovedPlaceholders(result.removedPlaceholders)
+        setShowSyncPanel(true)
+        
+        // Reload template data
+        const updatedTemplate = getTemplate(template.id)
+        if (updatedTemplate) {
+          setTemplate(updatedTemplate)
+          mammoth.extractRawText({ arrayBuffer: updatedTemplate.fileContent }).then((r) => {
+            setDocumentText(r.value)
+          })
+        }
+
+        if (result.newCount > 0 || result.removedCount > 0) {
+          toast.success(
+            `Template synced: ${result.syncedCount} preserved, ${result.newCount} new, ${result.removedCount} removed`
+          )
+        } else {
+          toast.success('Template updated successfully')
+        }
+      }
+    } catch (error) {
+      toast.error('Failed to update template')
+    } finally {
+      setIsUploading(false)
+      // Reset file input
+      e.target.value = ''
+    }
   }
 
   const addPlaceholder = () => {
@@ -137,8 +193,13 @@ export default function TemplateEditorPage({ params }: { params: Promise<{ id: s
 
   const handleSave = () => {
     if (!template) return
-    updatePlaceholders(template.id, placeholders)
+    savePlaceholdersClean(template.id, placeholders)
     setOriginalPlaceholders(JSON.parse(JSON.stringify(placeholders)))
+    // Clear sync status after saving
+    setPlaceholders(prev => prev.map(p => ({ ...p, syncStatus: undefined })))
+    setRemovedPlaceholders([])
+    setSyncResult(null)
+    setShowSyncPanel(false)
     toast.success('Template saved')
   }
 
@@ -200,6 +261,33 @@ export default function TemplateEditorPage({ params }: { params: Promise<{ id: s
               Re-detect
             </Button>
           )}
+          <label htmlFor="file-upload">
+            <Button variant="outline" size="sm" asChild disabled={isUploading}>
+              <span>
+                <Upload className="mr-2 h-4 w-4" />
+                {isUploading ? 'Uploading...' : 'Update File'}
+              </span>
+            </Button>
+            <input
+              id="file-upload"
+              type="file"
+              accept=".docx"
+              className="hidden"
+              onChange={handleFileUpload}
+              disabled={isUploading}
+            />
+          </label>
+          {syncResult && (syncResult.newCount > 0 || syncResult.removedCount > 0) && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShowSyncPanel(!showSyncPanel)}
+              className={cn(showSyncPanel && 'bg-muted')}
+            >
+              <GitCompare className="mr-2 h-4 w-4" />
+              Sync Status
+            </Button>
+          )}
           <Button onClick={handleSave}>
             <Save className="mr-2 h-4 w-4" />
             Save
@@ -232,9 +320,16 @@ export default function TemplateEditorPage({ params }: { params: Promise<{ id: s
                   onClick={() => setSelectedPlaceholder(placeholder.id)}
                 >
                   <div className="min-w-0 flex-1">
-                    <p className="font-medium text-foreground truncate">
-                      {placeholder.label}
-                    </p>
+                    <div className="flex items-center gap-2">
+                      <p className="font-medium text-foreground truncate">
+                        {placeholder.label}
+                      </p>
+                      {placeholder.syncStatus === 'new' && (
+                        <Badge variant="outline" className="bg-blue-500/10 text-blue-600 border-blue-500/20 text-xs px-1.5 py-0">
+                          New
+                        </Badge>
+                      )}
+                    </div>
                     <p className="text-xs text-muted-foreground">
                       {`{{${placeholder.name}}}`} · {placeholder.type}
                     </p>
@@ -273,6 +368,19 @@ export default function TemplateEditorPage({ params }: { params: Promise<{ id: s
 
         {/* Editor Panel */}
         <div className="flex-1 overflow-auto p-6">
+          {/* Sync Panel */}
+          {showSyncPanel && syncResult && (
+            <div className="mx-auto max-w-2xl mb-6">
+              <PlaceholderSyncPanel
+                placeholders={placeholders}
+                removedPlaceholders={removedPlaceholders}
+                syncedCount={syncResult.syncedCount}
+                newCount={syncResult.newCount}
+                removedCount={syncResult.removedCount}
+              />
+            </div>
+          )}
+
           {selected ? (
             <motion.div
               key={selected.id}
