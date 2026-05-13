@@ -545,7 +545,7 @@ function GeneratePageContent() {
                       <div>
                         <p className="font-medium text-foreground">{doc.fileName}</p>
                         <p className="text-sm text-muted-foreground">
-                          {doc.type.toUpperCase()} · {formatDateTimeDDMMYYYY(doc.generatedAt)}
+                          {doc.type.toUpperCase()} · {formatDateDDMMYYYY(new Date(doc.generatedAt))}
                         </p>
                       </div>
                     </div>
