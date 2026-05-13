@@ -10,6 +10,8 @@ import {
   Check,
   Plus,
   Eye,
+  Menu,
+  X,
 } from 'lucide-react'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
@@ -46,6 +48,7 @@ function GeneratePageContent() {
   const [showPreview, setShowPreview] = useState(false)
   const [documentHtml, setDocumentHtml] = useState<Record<string, string>>({})
   const [previewTemplate, setPreviewTemplate] = useState<string | null>(null)
+  const [sidebarOpen, setSidebarOpen] = useState(true)
 
   useEffect(() => {
     if (templateId && templates.find(t => t.id === templateId)) {
@@ -220,13 +223,25 @@ function GeneratePageContent() {
           </div>
         </motion.div>
       ) : (
-        <div className="mt-8 grid gap-8 lg:grid-cols-3">
-          {/* Template Selection */}
+        <div className="mt-8 flex gap-8">
+          {/* Sidebar Toggle Button */}
+          <button
+            onClick={() => setSidebarOpen(!sidebarOpen)}
+            className="fixed bottom-6 right-6 z-40 hidden lg:flex h-10 w-10 items-center justify-center rounded-lg border border-border bg-card hover:bg-muted cursor-pointer"
+            title={sidebarOpen ? "Collapse sidebar" : "Expand sidebar"}
+          >
+            {sidebarOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+          </button>
+
+          {/* Template Selection Sidebar */}
           <motion.div
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.3, delay: 0.1 }}
-            className="lg:col-span-1"
+            initial={{ opacity: 0, x: -20 }}
+            animate={{ opacity: sidebarOpen ? 1 : 0, x: sidebarOpen ? 0 : -20 }}
+            transition={{ duration: 0.2 }}
+            className={cn(
+              "flex-shrink-0 w-full lg:w-80 transition-all duration-200",
+              !sidebarOpen && "hidden lg:hidden"
+            )}
           >
             <div className="rounded-xl border border-border bg-card">
               <div className="border-b border-border p-4">
@@ -282,12 +297,12 @@ function GeneratePageContent() {
             </div>
           </motion.div>
 
-          {/* Form */}
+          {/* Form Section */}
           <motion.div
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.3, delay: 0.2 }}
-            className="lg:col-span-2"
+            className="flex-1 min-w-0"
           >
             {selectedTemplates.length === 0 ? (
               <div className="flex h-full min-h-[400px] flex-col items-center justify-center rounded-xl border border-dashed border-border bg-muted/30">
@@ -331,7 +346,7 @@ function GeneratePageContent() {
                       </Button>
                     </div>
                   </div>
-                  <div className="max-h-[400px] overflow-auto p-4">
+                  <div className="max-h-[600px] overflow-y-auto overflow-x-hidden p-4">
                     <div className="space-y-4">
                       {allPlaceholders.map((placeholder) => (
                         <div key={placeholder.id} className="space-y-2">
