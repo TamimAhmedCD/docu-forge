@@ -1054,6 +1054,22 @@ export function SectionForm({
     })
   )
 
+  // Helper to calculate overlap ratio between two rectangles
+  type RectLike = { left: number; right: number; top: number; bottom: number; width?: number; height?: number }
+  const getOverlapRatio = useCallback((
+    rect1: RectLike | null, 
+    rect2: RectLike | null
+  ): number => {
+    if (!rect1 || !rect2) return 0
+    const xOverlap = Math.max(0, Math.min(rect1.right, rect2.right) - Math.max(rect1.left, rect2.left))
+    const yOverlap = Math.max(0, Math.min(rect1.bottom, rect2.bottom) - Math.max(rect1.top, rect2.top))
+    const overlapArea = xOverlap * yOverlap
+    const rect1Width = rect1.width ?? (rect1.right - rect1.left)
+    const rect1Height = rect1.height ?? (rect1.bottom - rect1.top)
+    const rect1Area = rect1Width * rect1Height
+    return rect1Area > 0 ? overlapArea / rect1Area : 0
+  }, [])
+
   // Simple and reliable collision detection
   const customCollisionDetection: CollisionDetection = useCallback((args) => {
     // Get all intersecting rectangles
@@ -1065,18 +1081,20 @@ export function SectionForm({
 
     // Sort collisions by overlap ratio (highest first)
     const sortedCollisions = [...collisions].sort((a, b) => {
-      const ratioA = a.data?.droppableContainer?.rect 
-        ? getOverlapRatio(args.collisionRect, a.data.droppableContainer.rect.current)
-        : 0
-      const ratioB = b.data?.droppableContainer?.rect
-        ? getOverlapRatio(args.collisionRect, b.data.droppableContainer.rect.current)
-        : 0
+      const rectA = a.data?.droppableContainer?.rect?.current as RectLike | undefined
+      const rectB = b.data?.droppableContainer?.rect?.current as RectLike | undefined
+      const collisionRect = args.collisionRect as RectLike
+      const ratioA = rectA ? getOverlapRatio(collisionRect, rectA) : 0
+      const ratioB = rectB ? getOverlapRatio(collisionRect, rectB) : 0
       return ratioB - ratioA
     })
 
-    // Find the best match with priority: placeholder > section-drop > section
+    // Find the best match with priority: placeholder > group > section-drop > section
     const placeholder = sortedCollisions.find(c => String(c.id).startsWith('placeholder-'))
     if (placeholder) return [placeholder]
+    
+    const group = sortedCollisions.find(c => String(c.id).startsWith('group-'))
+    if (group) return [group]
     
     const sectionDrop = sortedCollisions.find(c => String(c.id).startsWith('section-drop-'))
     if (sectionDrop) return [sectionDrop]
@@ -1087,17 +1105,7 @@ export function SectionForm({
     if (section) return [section]
 
     return [sortedCollisions[0]]
-  }, [])
-  
-  // Helper to calculate overlap ratio
-  function getOverlapRatio(rect1: DOMRect | null, rect2: ClientRect | null): number {
-    if (!rect1 || !rect2) return 0
-    const xOverlap = Math.max(0, Math.min(rect1.right, rect2.right) - Math.max(rect1.left, rect2.left))
-    const yOverlap = Math.max(0, Math.min(rect1.bottom, rect2.bottom) - Math.max(rect1.top, rect2.top))
-    const overlapArea = xOverlap * yOverlap
-    const rect1Area = rect1.width * rect1.height
-    return rect1Area > 0 ? overlapArea / rect1Area : 0
-  }
+  }, [getOverlapRatio])
 
   // Filter placeholders by search query
   const filteredSections = useMemo(() => {
@@ -1157,6 +1165,21 @@ export function SectionForm({
       }
     }
     
+    if (idStr.startsWith('group-')) {
+      const groupId = idStr.replace('group-', '')
+      // Find the group in sections
+      for (const section of sections) {
+        const group = section.groups?.find(g => g.id === groupId)
+        if (group) {
+          return {
+            type: 'group' as const,
+            group,
+            sectionId: section.id,
+          }
+        }
+      }
+    }
+    
     if (idStr.startsWith('section-')) {
       const sectionId = idStr.replace('section-', '')
       return {
@@ -1183,18 +1206,15 @@ export function SectionForm({
     const activeData = active.data.current as DragData | undefined
     const overData = over.data.current as DragData | undefined
 
-    // Only handle placeholder dragging
-    if (!activeData || activeData.type !== 'placeholder') return
-
-    const activeSectionId = activeData.sectionId
-    const placeholderId = activeData.placeholderId
-    if (!activeSectionId || !placeholderId) return
+    if (!activeData) return
 
     // Determine target section
     let targetSectionId: string | undefined
     const overId = String(over.id)
 
     if (overData?.type === 'placeholder' && overData.sectionId) {
+      targetSectionId = overData.sectionId
+    } else if (overData?.type === 'group' && overData.sectionId) {
       targetSectionId = overData.sectionId
     } else if (overId.startsWith('section-drop-')) {
       targetSectionId = overId.replace('section-drop-', '')
@@ -1204,17 +1224,38 @@ export function SectionForm({
       targetSectionId = overId.replace('section-', '')
     }
 
-    console.log("[v0] DragOver NEW:", { overId, targetSectionId, activeSectionId, different: targetSectionId !== activeSectionId })
+    // Handle placeholder dragging
+    if (activeData.type === 'placeholder') {
+      const activeSectionId = activeData.sectionId
+      const placeholderId = activeData.placeholderId
+      if (!activeSectionId || !placeholderId) return
 
-    // Move to new section if different
-    if (targetSectionId && targetSectionId !== activeSectionId) {
-      console.log("[v0] Moving to new section:", targetSectionId)
-      // Update active data for subsequent events
-      if (active.data.current) {
-        (active.data.current as DragData).sectionId = targetSectionId
+      // Move to new section if different
+      if (targetSectionId && targetSectionId !== activeSectionId) {
+        // Update active data for subsequent events
+        if (active.data.current) {
+          (active.data.current as DragData).sectionId = targetSectionId
+        }
+        onSectionsChange(movePlaceholder(sections, placeholderId, activeSectionId, targetSectionId))
+        onAutoGroupedChange(false)
       }
-      onSectionsChange(movePlaceholder(sections, placeholderId, activeSectionId, targetSectionId))
-      onAutoGroupedChange(false)
+    }
+
+    // Handle group dragging
+    if (activeData.type === 'group') {
+      const activeSectionId = activeData.sectionId
+      const groupId = activeData.groupId
+      if (!activeSectionId || !groupId) return
+
+      // Move group to new section if different
+      if (targetSectionId && targetSectionId !== activeSectionId) {
+        // Update active data for subsequent events
+        if (active.data.current) {
+          (active.data.current as DragData).sectionId = targetSectionId
+        }
+        onSectionsChange(moveGroup(sections, groupId, activeSectionId, targetSectionId))
+        onAutoGroupedChange(false)
+      }
     }
   }
 
@@ -1246,19 +1287,62 @@ export function SectionForm({
     }
 
     // Handle placeholder reordering within same section
-    if (activeData.type === 'placeholder' && overData?.type === 'placeholder') {
+    if (activeData.type === 'placeholder') {
       const activePlaceholderId = activeData.placeholderId
-      const overPlaceholderId = overData.placeholderId
+      if (!activePlaceholderId) return
       
-      if (!activePlaceholderId || !overPlaceholderId) return
-      if (activeData.sectionId !== overData.sectionId) return // Cross-section handled by dragOver
+      const sectionIndex = sections.findIndex(s => s.id === activeData.sectionId)
+      if (sectionIndex === -1) return
+      const section = sections[sectionIndex]
+
+      // Determine over index based on what we're over
+      let overIndex = -1
+      const overId = String(over.id)
+      
+      if (overData?.type === 'placeholder' && overData.placeholderId) {
+        overIndex = section.placeholderIds.indexOf(overData.placeholderId)
+      } else if (overData?.type === 'group' && overData.groupId) {
+        overIndex = section.placeholderIds.indexOf(`group-${overData.groupId}`)
+      } else if (overId.startsWith('group-')) {
+        overIndex = section.placeholderIds.indexOf(overId)
+      }
+
+      const activeIndex = section.placeholderIds.indexOf(activePlaceholderId)
+
+      if (activeIndex !== -1 && overIndex !== -1 && activeIndex !== overIndex) {
+        const newPlaceholderIds = arrayMove(section.placeholderIds, activeIndex, overIndex)
+        const newSections = [...sections]
+        newSections[sectionIndex] = { ...section, placeholderIds: newPlaceholderIds }
+        onSectionsChange(newSections)
+        onAutoGroupedChange(false)
+      }
+    }
+
+    // Handle group reordering within same section
+    if (activeData.type === 'group') {
+      const activeGroupId = activeData.groupId
+      if (!activeGroupId) return
 
       const sectionIndex = sections.findIndex(s => s.id === activeData.sectionId)
       if (sectionIndex === -1) return
-
       const section = sections[sectionIndex]
-      const activeIndex = section.placeholderIds.indexOf(activePlaceholderId)
-      const overIndex = section.placeholderIds.indexOf(overPlaceholderId)
+
+      // Determine over index based on what we're over
+      let overIndex = -1
+      const overId = String(over.id)
+      
+      if (overData?.type === 'placeholder' && overData.placeholderId) {
+        overIndex = section.placeholderIds.indexOf(overData.placeholderId)
+      } else if (overData?.type === 'group' && overData.groupId) {
+        overIndex = section.placeholderIds.indexOf(`group-${overData.groupId}`)
+      } else if (overId.startsWith('group-')) {
+        overIndex = section.placeholderIds.indexOf(overId)
+      } else if (overId.startsWith('placeholder-')) {
+        const placeholderId = overId.replace('placeholder-', '')
+        overIndex = section.placeholderIds.indexOf(placeholderId)
+      }
+
+      const activeIndex = section.placeholderIds.indexOf(`group-${activeGroupId}`)
 
       if (activeIndex !== -1 && overIndex !== -1 && activeIndex !== overIndex) {
         const newPlaceholderIds = arrayMove(section.placeholderIds, activeIndex, overIndex)
@@ -1330,6 +1414,89 @@ export function SectionForm({
     onAutoGroupedChange(true)
   }
 
+  // Handle toggling field selection
+  const handleToggleFieldSelection = useCallback((fieldId: string) => {
+    setSelectedFields(prev => {
+      const newSet = new Set(prev)
+      if (newSet.has(fieldId)) {
+        newSet.delete(fieldId)
+      } else {
+        newSet.add(fieldId)
+      }
+      return newSet
+    })
+  }, [])
+
+  // Find which section contains a selected field
+  const findSectionForField = useCallback((fieldId: string): string | null => {
+    for (const section of sections) {
+      // Check direct placeholders
+      if (section.placeholderIds.includes(fieldId)) {
+        return section.id
+      }
+      // Check inside groups
+      for (const group of section.groups || []) {
+        if (group.placeholderIds.includes(fieldId)) {
+          return section.id
+        }
+      }
+    }
+    return null
+  }, [sections])
+
+  // Handle creating a group from selected fields
+  const handleCreateGroup = useCallback(() => {
+    if (selectedFields.size < 2 || !newGroupName.trim()) return
+
+    // Find the section containing the first selected field
+    const firstFieldId = Array.from(selectedFields)[0]
+    const sectionId = findSectionForField(firstFieldId)
+    if (!sectionId) return
+
+    // Get all selected fields that are in this section (must be ungrouped)
+    const section = sections.find(s => s.id === sectionId)
+    if (!section) return
+
+    // Only include fields that are direct children of the section (not in groups)
+    const fieldsInSection = Array.from(selectedFields).filter(id => 
+      section.placeholderIds.includes(id)
+    )
+
+    if (fieldsInSection.length < 2) {
+      // Fields are spread across groups or sections - can't group
+      return
+    }
+
+    saveToHistory()
+    const updatedSections = createGroup(sections, sectionId, fieldsInSection, newGroupName.trim())
+    onSectionsChange(updatedSections)
+    onAutoGroupedChange(false)
+    
+    // Reset state
+    setSelectedFields(new Set())
+    setIsSelectionMode(false)
+    setShowGroupDialog(false)
+    setNewGroupName('')
+  }, [selectedFields, newGroupName, sections, findSectionForField, saveToHistory, onSectionsChange, onAutoGroupedChange])
+
+  // Handle toggling group expanded state
+  const handleToggleGroup = useCallback((sectionId: string, groupId: string) => {
+    onSectionsChange(toggleGroupExpanded(sections, sectionId, groupId))
+  }, [sections, onSectionsChange])
+
+  // Handle ungrouping fields
+  const handleUngroupFields = useCallback((sectionId: string, groupId: string) => {
+    saveToHistory()
+    onSectionsChange(ungroupFields(sections, sectionId, groupId))
+    onAutoGroupedChange(false)
+  }, [sections, saveToHistory, onSectionsChange, onAutoGroupedChange])
+
+  // Handle renaming a group
+  const handleRenameGroup = useCallback((sectionId: string, groupId: string, newName: string) => {
+    onSectionsChange(renameGroup(sections, sectionId, groupId, newName))
+    onAutoGroupedChange(false)
+  }, [sections, onSectionsChange, onAutoGroupedChange])
+
   const sectionIds = filteredSections.map(s => `section-${s.id}`)
 
   return (
@@ -1386,6 +1553,58 @@ export function SectionForm({
         <Progress value={overallProgress.percentage} className="h-2" />
       </div>
 
+      {/* Selection Mode Toolbar */}
+      <div className="flex items-center gap-2">
+        <Button
+          variant={isSelectionMode ? "default" : "outline"}
+          size="sm"
+          onClick={() => {
+            setIsSelectionMode(!isSelectionMode)
+            if (isSelectionMode) {
+              setSelectedFields(new Set())
+            }
+          }}
+        >
+          {isSelectionMode ? (
+            <>
+              <X className="mr-2 h-4 w-4" />
+              Cancel Selection
+            </>
+          ) : (
+            <>
+              <CheckSquare className="mr-2 h-4 w-4" />
+              Select Fields
+            </>
+          )}
+        </Button>
+        
+        {isSelectionMode && (
+          <>
+            <span className="text-sm text-muted-foreground">
+              {selectedFields.size} selected
+            </span>
+            {selectedFields.size >= 2 && (
+              <Button
+                size="sm"
+                onClick={() => setShowGroupDialog(true)}
+              >
+                <Group className="mr-2 h-4 w-4" />
+                Create Group
+              </Button>
+            )}
+            {selectedFields.size > 0 && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setSelectedFields(new Set())}
+              >
+                Clear
+              </Button>
+            )}
+          </>
+        )}
+      </div>
+
       {/* Sections with DnD */}
       <DndContext
         sensors={sensors}
@@ -1425,6 +1644,13 @@ export function SectionForm({
                 activePlaceholderId={activeType === 'placeholder' && activeItem?.type === 'placeholder' 
                   ? activeItem.placeholder?.id 
                   : null}
+                activeGroupId={activeType === 'group' ? String(activeId).replace('group-', '') : null}
+                onToggleGroup={handleToggleGroup}
+                onUngroupFields={handleUngroupFields}
+                onRenameGroup={handleRenameGroup}
+                isSelectionMode={isSelectionMode}
+                selectedFields={selectedFields}
+                onToggleFieldSelection={handleToggleFieldSelection}
               />
             ))}
           </div>
@@ -1433,6 +1659,13 @@ export function SectionForm({
         <DragOverlay dropAnimation={null} modifiers={[restrictToWindowEdges]}>
           {activeItem?.type === 'placeholder' && activeItem.placeholder && (
             <FieldDragOverlay placeholder={activeItem.placeholder} formData={formData} />
+          )}
+          {activeItem?.type === 'group' && activeItem.group && (
+            <GroupDragOverlay 
+              group={activeItem.group} 
+              placeholders={placeholders} 
+              formData={formData} 
+            />
           )}
           {activeItem?.type === 'section' && activeItem.section && (
             <SectionDragOverlay 
@@ -1512,6 +1745,62 @@ export function SectionForm({
             </Button>
             <Button variant="destructive" onClick={handleConfirmDelete}>
               Delete Section
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Create Group Dialog */}
+      <Dialog open={showGroupDialog} onOpenChange={(open) => {
+        setShowGroupDialog(open)
+        if (!open) setNewGroupName('')
+      }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Create Field Group</DialogTitle>
+            <DialogDescription>
+              Group {selectedFields.size} selected fields together. Groups can be moved as a single unit, collapsed/expanded, and ungrouped later.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4">
+            <Label htmlFor="group-name">Group Name</Label>
+            <Input
+              id="group-name"
+              value={newGroupName}
+              onChange={(e) => setNewGroupName(e.target.value)}
+              placeholder="e.g., Contact Details, Address Info"
+              className="mt-2"
+              autoFocus
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && newGroupName.trim()) {
+                  handleCreateGroup()
+                }
+              }}
+            />
+            <div className="mt-4">
+              <Label className="text-muted-foreground text-sm">Selected Fields:</Label>
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {Array.from(selectedFields).map(fieldId => {
+                  const placeholder = placeholders.find(p => p.id === fieldId)
+                  return placeholder ? (
+                    <Badge key={fieldId} variant="secondary" className="text-xs">
+                      {placeholder.label}
+                    </Badge>
+                  ) : null
+                })}
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => {
+              setShowGroupDialog(false)
+              setNewGroupName('')
+            }}>
+              Cancel
+            </Button>
+            <Button onClick={handleCreateGroup} disabled={!newGroupName.trim()}>
+              <Group className="mr-2 h-4 w-4" />
+              Create Group
             </Button>
           </DialogFooter>
         </DialogContent>

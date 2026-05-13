@@ -20,8 +20,8 @@ export function useFormStorage() {
             if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}/.test(value)) {
               // If it looks like a date string, keep it as string for input[type="date"]
               restored[key] = value
-            } else {
-              restored[key] = value
+            } else if (typeof value === 'string' || typeof value === 'number' || value instanceof Date) {
+              restored[key] = value as string | number | Date
             }
           }
           setFormData(restored)

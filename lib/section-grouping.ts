@@ -178,13 +178,14 @@ export function syncSectionsWithPlaceholders(
         existingSection.placeholderIds.push(placeholder.id)
       } else {
         // Create new section for this placeholder
-        updatedSections.push({
-          id: crypto.randomUUID(),
-          name: sectionName,
-          placeholderIds: [placeholder.id],
-          order: updatedSections.length,
-          isExpanded: false,
-        })
+      updatedSections.push({
+        id: crypto.randomUUID(),
+        name: sectionName,
+        placeholderIds: [placeholder.id],
+        groups: [],
+        order: updatedSections.length,
+        isExpanded: false,
+      })
       }
     }
   } else {
@@ -194,13 +195,14 @@ export function syncSectionsWithPlaceholders(
     if (needsReviewSection) {
       needsReviewSection.placeholderIds.push(...newIds)
     } else {
-      updatedSections.push({
-        id: crypto.randomUUID(),
-        name: 'Needs Review',
-        placeholderIds: newIds,
-        order: updatedSections.length,
-        isExpanded: true,
-      })
+    updatedSections.push({
+      id: crypto.randomUUID(),
+      name: 'Needs Review',
+      placeholderIds: newIds,
+      groups: [],
+      order: updatedSections.length,
+      isExpanded: true,
+    })
     }
   }
   
