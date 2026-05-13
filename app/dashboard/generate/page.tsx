@@ -27,6 +27,7 @@ import {
 import { useTemplates } from '@/hooks/use-templates'
 import { useFormStorage } from '@/hooks/use-form-storage'
 import { useSectionStorage } from '@/hooks/use-section-storage'
+import { useWidthStorage } from '@/hooks/use-width-storage'
 import { Template, FormData as FormDataType, GeneratedDocument, FieldWidth, Placeholder } from '@/types'
 import { SectionForm } from '@/components/section-form'
 import { createDefaultSectionConfig } from '@/lib/section-grouping'

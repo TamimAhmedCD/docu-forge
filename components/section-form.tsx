@@ -649,10 +649,20 @@ export function SectionForm({
     const activeSectionId = activeData.sectionId
     let overSectionId: string | undefined
 
+    // Check if dropping on a placeholder
     if (overData?.type === 'placeholder') {
       overSectionId = overData.sectionId
-    } else if (overData?.type === 'section') {
+    } 
+    // Check if dropping on a section (including section header or empty area)
+    else if (overData?.type === 'section') {
       overSectionId = overData.sectionId
+    }
+    // Also check if the over.id itself is a section id
+    else {
+      const overId = String(over.id)
+      if (overId.startsWith('section-')) {
+        overSectionId = overId.replace('section-', '')
+      }
     }
 
     if (!activeSectionId || !overSectionId || activeSectionId === overSectionId) return
@@ -660,6 +670,11 @@ export function SectionForm({
     // Move placeholder to new section
     const placeholderId = activeData.placeholderId
     if (!placeholderId) return
+
+    // Update the active data's sectionId so subsequent drag-over events work correctly
+    if (active.data.current) {
+      (active.data.current as DragData).sectionId = overSectionId
+    }
 
     onSectionsChange(
       movePlaceholder(sections, placeholderId, activeSectionId, overSectionId)

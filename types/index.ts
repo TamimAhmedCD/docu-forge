@@ -4,8 +4,8 @@ export type FieldType = 'text' | 'textarea' | 'number' | 'date' | 'email' | 'sel
 
 export type PlaceholderSyncStatus = 'synced' | 'new' | 'removed' | 'modified'
 
-// Field width for dynamic grid layout
-export type FieldWidth = 'compact' | 'medium' | 'large' | 'full'
+// Field width for dynamic grid layout (5 options)
+export type FieldWidth = 'compact' | 'medium' | 'large' | 'xlarge' | 'full'
 
 export interface Placeholder {
   id: string

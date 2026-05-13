@@ -81,29 +81,33 @@ export function detectFieldWidth(placeholder: Placeholder): FieldWidth {
 export function getFieldWidthClasses(width: FieldWidth): string {
   switch (width) {
     case 'compact':
-      // 1/6 on desktop, 1/3 on tablet, full on mobile
+      // 1 column span
       return 'col-span-6 sm:col-span-3 md:col-span-2 lg:col-span-1'
     case 'medium':
-      // 2/6 on desktop, 1/2 on tablet, full on mobile
-      return 'col-span-6 sm:col-span-3 md:col-span-2'
+      // 2 column span
+      return 'col-span-6 sm:col-span-3 lg:col-span-2'
     case 'large':
-      // 4/6 on desktop, full on tablet/mobile
-      return 'col-span-6 md:col-span-4'
+      // 3 column span
+      return 'col-span-6 sm:col-span-6 md:col-span-3'
+    case 'xlarge':
+      // 4 column span
+      return 'col-span-6 md:col-span-6 lg:col-span-4'
     case 'full':
       // Full width always
       return 'col-span-6'
     default:
-      return 'col-span-6 sm:col-span-3 md:col-span-2'
+      return 'col-span-6 sm:col-span-3 lg:col-span-2'
   }
 }
 
 /**
- * Width options for manual selection
+ * Width options for manual selection (5 options)
  */
 export const WIDTH_OPTIONS: { value: FieldWidth; label: string; icon: string }[] = [
   { value: 'compact', label: '1x', icon: '▪' },
   { value: 'medium', label: '2x', icon: '▪▪' },
   { value: 'large', label: '3x', icon: '▪▪▪' },
+  { value: 'xlarge', label: '4x', icon: '▪▪▪▪' },
   { value: 'full', label: 'Full', icon: '▬' },
 ]
 
