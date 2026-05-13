@@ -11,6 +11,8 @@ import {
   RefreshCw,
   FileText,
   Settings2,
+  Menu,
+  X,
 } from 'lucide-react'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
@@ -49,6 +51,7 @@ export default function TemplateEditorPage({ params }: { params: Promise<{ id: s
   const [isAutoMode, setIsAutoMode] = useState(true)
   const [selectedPlaceholder, setSelectedPlaceholder] = useState<string | null>(null)
   const [documentText, setDocumentText] = useState('')
+  const [sidebarOpen, setSidebarOpen] = useState(true)
 
   useEffect(() => {
     const t = getTemplate(resolvedParams.id)
@@ -136,6 +139,14 @@ export default function TemplateEditorPage({ params }: { params: Promise<{ id: s
               <ArrowLeft className="h-5 w-5" />
             </Button>
           </Link>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => setSidebarOpen(!sidebarOpen)}
+            className="hidden lg:flex"
+          >
+            {sidebarOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+          </Button>
           <div>
             <h1 className="text-lg font-semibold text-foreground">
               {template.name.replace(/\.[^/.]+$/, '')}
@@ -171,16 +182,24 @@ export default function TemplateEditorPage({ params }: { params: Promise<{ id: s
 
       {/* Content */}
       <div className="flex flex-1 overflow-hidden">
-        {/* Placeholders List */}
-        <div className="w-80 flex-shrink-0 border-r border-border bg-muted/20">
-          <div className="flex items-center justify-between border-b border-border p-4">
+        {/* Placeholders Sidebar */}
+        <motion.div
+          initial={false}
+          animate={{ width: sidebarOpen ? 320 : 0 }}
+          transition={{ duration: 0.2 }}
+          className={cn(
+            "flex-shrink-0 border-r border-border bg-muted/20 overflow-hidden",
+            !sidebarOpen && "hidden"
+          )}
+        >
+          <div className="flex items-center justify-between border-b border-border p-4 w-80">
             <h2 className="font-semibold text-foreground">Placeholders</h2>
             <Button variant="ghost" size="sm" onClick={addPlaceholder}>
               <Plus className="mr-1 h-4 w-4" />
               Add
             </Button>
           </div>
-          <div className="flex-1 overflow-auto p-4">
+          <div className="h-[calc(100vh-11rem)] overflow-y-auto overflow-x-hidden p-4 w-80">
             <div className="space-y-2">
               {placeholders.map((placeholder) => (
                 <motion.div
@@ -231,7 +250,7 @@ export default function TemplateEditorPage({ params }: { params: Promise<{ id: s
               )}
             </div>
           </div>
-        </div>
+        </motion.div>
 
         {/* Editor Panel */}
         <div className="flex-1 overflow-auto p-6">
