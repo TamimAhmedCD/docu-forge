@@ -40,6 +40,7 @@ import {
   Settings2,
   RotateCcw,
   Undo2,
+  Columns,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -69,7 +70,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { Placeholder, FormSection, FormData as FormDataType } from '@/types'
+import { Placeholder, FormSection, FormData as FormDataType, FieldWidth } from '@/types'
 import { cn } from '@/lib/utils'
 import {
   getSectionProgress,
@@ -80,6 +81,11 @@ import {
   movePlaceholder,
   autoGroupPlaceholders,
 } from '@/lib/section-grouping'
+import {
+  detectFieldWidth,
+  getFieldWidthClasses,
+  WIDTH_OPTIONS,
+} from '@/lib/field-width'
 
 interface SectionFormProps {
   sections: FormSection[]
@@ -87,6 +93,7 @@ interface SectionFormProps {
   formData: FormDataType
   onSectionsChange: (sections: FormSection[]) => void
   onFormDataChange: (id: string, value: string | number | Date) => void
+  onPlaceholderWidthChange?: (id: string, width: FieldWidth) => void
   isAutoGrouped: boolean
   onAutoGroupedChange: (value: boolean) => void
 }
@@ -105,12 +112,14 @@ function SortableField({
   sectionId,
   formData,
   onFormDataChange,
+  onWidthChange,
   isDragging,
 }: {
   placeholder: Placeholder
   sectionId: string
   formData: FormDataType
   onFormDataChange: (id: string, value: string | number | Date) => void
+  onWidthChange?: (id: string, width: FieldWidth) => void
   isDragging?: boolean
 }) {
   const {
@@ -136,13 +145,17 @@ function SortableField({
 
   const value = formData[placeholder.id]
   const isFilled = value !== undefined && value !== null && value !== ''
+  const fieldWidth = detectFieldWidth(placeholder)
 
   if (isSortableDragging || isDragging) {
     return (
       <div
         ref={setNodeRef}
         style={style}
-        className="rounded-lg border-2 border-dashed border-primary/50 bg-primary/5 p-4 h-24"
+        className={cn(
+          'rounded-lg border-2 border-dashed border-primary/50 bg-primary/5 h-16',
+          getFieldWidthClasses(fieldWidth)
+        )}
       />
     )
   }
@@ -152,68 +165,102 @@ function SortableField({
       ref={setNodeRef}
       style={style}
       className={cn(
-        'group relative rounded-lg border border-border bg-card p-4 transition-all',
-        isFilled && 'border-primary/30 bg-primary/5'
+        'group relative rounded-lg border border-border bg-card p-3 transition-all hover:border-muted-foreground/30',
+        isFilled && 'border-primary/30 bg-primary/5',
+        getFieldWidthClasses(fieldWidth)
       )}
     >
-      <div
-        {...attributes}
-        {...listeners}
-        className="absolute left-2 top-1/2 -translate-y-1/2 cursor-grab active:cursor-grabbing p-1 rounded hover:bg-muted transition-colors touch-none"
-      >
-        <GripVertical className="h-4 w-4 text-muted-foreground" />
-      </div>
-      <div className="pl-6 space-y-2">
-        <Label htmlFor={placeholder.id} className="flex items-center gap-2">
+      {/* Compact Header with Drag Handle and Width Selector */}
+      <div className="flex items-center gap-2 mb-2">
+        <div
+          {...attributes}
+          {...listeners}
+          className="cursor-grab active:cursor-grabbing p-0.5 rounded hover:bg-muted transition-colors touch-none opacity-50 group-hover:opacity-100"
+        >
+          <GripVertical className="h-3.5 w-3.5 text-muted-foreground" />
+        </div>
+        <Label htmlFor={placeholder.id} className="flex-1 text-sm font-medium truncate flex items-center gap-1.5">
           {placeholder.label}
           {placeholder.required && (
-            <span className="text-destructive">*</span>
-          )}
-          {placeholder.syncStatus === 'new' && (
-            <Badge variant="outline" className="bg-blue-500/10 text-blue-600 border-blue-500/20 text-xs">
-              New
-            </Badge>
+            <span className="text-destructive text-xs">*</span>
           )}
         </Label>
-        {placeholder.type === 'textarea' ? (
-          <Textarea
-            id={placeholder.id}
-            value={(value as string) || ''}
-            onChange={(e) => onFormDataChange(placeholder.id, e.target.value)}
-            placeholder={`Enter ${placeholder.label.toLowerCase()}`}
-            rows={3}
-            className="resize-none"
-          />
-        ) : placeholder.type === 'select' ? (
-          <Select
-            value={(value as string) || ''}
-            onValueChange={(v) => onFormDataChange(placeholder.id, v)}
-          >
-            <SelectTrigger>
-              <SelectValue placeholder={`Select ${placeholder.label.toLowerCase()}`} />
-            </SelectTrigger>
-            <SelectContent>
-              {placeholder.options?.map((option) => (
-                <SelectItem key={option} value={option}>
-                  {option}
-                </SelectItem>
+        {placeholder.syncStatus === 'new' && (
+          <Badge variant="outline" className="bg-blue-500/10 text-blue-600 border-blue-500/20 text-[10px] px-1 py-0">
+            New
+          </Badge>
+        )}
+        {/* Width Selector */}
+        {onWidthChange && (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button 
+                variant="ghost" 
+                size="icon" 
+                className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
+              >
+                <Columns className="h-3 w-3" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="min-w-[100px]">
+              {WIDTH_OPTIONS.map((option) => (
+                <DropdownMenuItem
+                  key={option.value}
+                  onClick={() => onWidthChange(placeholder.id, option.value)}
+                  className={cn(
+                    'text-xs',
+                    fieldWidth === option.value && 'bg-muted'
+                  )}
+                >
+                  <span className="mr-2 font-mono text-muted-foreground">{option.icon}</span>
+                  {option.label}
+                </DropdownMenuItem>
               ))}
-            </SelectContent>
-          </Select>
-        ) : (
-          <Input
-            id={placeholder.id}
-            type={
-              placeholder.type === 'number' ? 'number' :
-              placeholder.type === 'date' ? 'date' :
-              placeholder.type === 'email' ? 'email' : 'text'
-            }
-            value={(value as string) || ''}
-            onChange={(e) => onFormDataChange(placeholder.id, e.target.value)}
-            placeholder={`Enter ${placeholder.label.toLowerCase()}`}
-          />
+            </DropdownMenuContent>
+          </DropdownMenu>
         )}
       </div>
+
+      {/* Compact Input */}
+      {placeholder.type === 'textarea' ? (
+        <Textarea
+          id={placeholder.id}
+          value={(value as string) || ''}
+          onChange={(e) => onFormDataChange(placeholder.id, e.target.value)}
+          placeholder={`Enter ${placeholder.label.toLowerCase()}`}
+          rows={2}
+          className="resize-none text-sm min-h-[60px]"
+        />
+      ) : placeholder.type === 'select' ? (
+        <Select
+          value={(value as string) || ''}
+          onValueChange={(v) => onFormDataChange(placeholder.id, v)}
+        >
+          <SelectTrigger className="h-9 text-sm">
+            <SelectValue placeholder={`Select...`} />
+          </SelectTrigger>
+          <SelectContent>
+            {placeholder.options?.map((option) => (
+              <SelectItem key={option} value={option}>
+                {option}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      ) : (
+        <Input
+          id={placeholder.id}
+          type={
+            placeholder.type === 'number' ? 'number' :
+            placeholder.type === 'date' ? 'date' :
+            placeholder.type === 'email' ? 'email' : 'text'
+          }
+          value={(value as string) || ''}
+          onChange={(e) => onFormDataChange(placeholder.id, e.target.value)}
+          placeholder={`Enter ${placeholder.label.toLowerCase()}`}
+          className="h-9 text-sm"
+        />
+      )}
     </div>
   )
 }
@@ -224,6 +271,7 @@ function SortableSection({
   placeholders,
   formData,
   onFormDataChange,
+  onWidthChange,
   onToggleSection,
   onEditSection,
   onDeleteSection,
@@ -239,6 +287,7 @@ function SortableSection({
   placeholders: Placeholder[]
   formData: FormDataType
   onFormDataChange: (id: string, value: string | number | Date) => void
+  onWidthChange?: (id: string, width: FieldWidth) => void
   onToggleSection: (sectionId: string) => void
   onEditSection: (section: FormSection) => void
   onDeleteSection: (sectionId: string) => void
@@ -391,7 +440,7 @@ function SortableSection({
             transition={{ duration: 0.2 }}
             className="overflow-hidden"
           >
-            <div className="p-4 space-y-3 min-h-[80px]">
+            <div className="p-4 min-h-[80px]">
               {sectionPlaceholders.length === 0 ? (
                 <div className="text-center py-8 text-muted-foreground border-2 border-dashed border-border rounded-lg">
                   <p>No fields in this section</p>
@@ -399,16 +448,19 @@ function SortableSection({
                 </div>
               ) : (
                 <SortableContext items={placeholderIds} strategy={verticalListSortingStrategy}>
-                  {sectionPlaceholders.map((placeholder) => (
-                    <SortableField
-                      key={placeholder.id}
-                      placeholder={placeholder}
-                      sectionId={section.id}
-                      formData={formData}
-                      onFormDataChange={onFormDataChange}
-                      isDragging={activePlaceholderId === placeholder.id}
-                    />
-                  ))}
+                  <div className="grid grid-cols-6 gap-3">
+                    {sectionPlaceholders.map((placeholder) => (
+                      <SortableField
+                        key={placeholder.id}
+                        placeholder={placeholder}
+                        sectionId={section.id}
+                        formData={formData}
+                        onFormDataChange={onFormDataChange}
+                        onWidthChange={onWidthChange}
+                        isDragging={activePlaceholderId === placeholder.id}
+                      />
+                    ))}
+                  </div>
                 </SortableContext>
               )}
             </div>
@@ -474,6 +526,7 @@ export function SectionForm({
   formData,
   onSectionsChange,
   onFormDataChange,
+  onPlaceholderWidthChange,
   isAutoGrouped,
   onAutoGroupedChange,
 }: SectionFormProps) {
@@ -801,6 +854,7 @@ export function SectionForm({
                 placeholders={placeholders}
                 formData={formData}
                 onFormDataChange={onFormDataChange}
+                onWidthChange={onPlaceholderWidthChange}
                 onToggleSection={handleToggleSection}
                 onEditSection={handleStartEditSection}
                 onDeleteSection={handleDeleteSection}

@@ -27,7 +27,7 @@ import {
 import { useTemplates } from '@/hooks/use-templates'
 import { useFormStorage } from '@/hooks/use-form-storage'
 import { useSectionStorage } from '@/hooks/use-section-storage'
-import { Template, FormData as FormDataType, GeneratedDocument } from '@/types'
+import { Template, FormData as FormDataType, GeneratedDocument, FieldWidth, Placeholder } from '@/types'
 import { SectionForm } from '@/components/section-form'
 import { createDefaultSectionConfig } from '@/lib/section-grouping'
 import { generateDocx, generatePdf, downloadDocument } from '@/lib/document-generator'
@@ -66,13 +66,27 @@ function GeneratePageContent() {
     }
   }, [templateId, templates])
 
-  // Get all unique placeholders from selected templates (must be defined before sections sync effect)
+  // Local placeholder width overrides
+  const [placeholderWidths, setPlaceholderWidths] = useState<Record<string, FieldWidth>>({})
+
+  // Get all unique placeholders from selected templates with width overrides
   const allPlaceholders = useMemo(() => {
-    return selectedTemplates.flatMap(id => {
+    const basePlaceholders = selectedTemplates.flatMap(id => {
       const template = templates.find(t => t.id === id)
       return template?.placeholders || []
     }).filter((p, i, arr) => arr.findIndex(x => x.name === p.name) === i)
-  }, [selectedTemplates, templates])
+    
+    // Apply local width overrides
+    return basePlaceholders.map(p => ({
+      ...p,
+      width: placeholderWidths[p.id] || p.width
+    }))
+  }, [selectedTemplates, templates, placeholderWidths])
+
+  // Handle placeholder width change
+  const handlePlaceholderWidthChange = (id: string, width: FieldWidth) => {
+    setPlaceholderWidths(prev => ({ ...prev, [id]: width }))
+  }
 
   // Sync sections when placeholders change
   useEffect(() => {
@@ -408,6 +422,7 @@ function GeneratePageContent() {
                       formData={formData}
                       onSectionsChange={setSections}
                       onFormDataChange={handleInputChange}
+                      onPlaceholderWidthChange={handlePlaceholderWidthChange}
                       isAutoGrouped={isAutoGrouped}
                       onAutoGroupedChange={setIsAutoGrouped}
                     />

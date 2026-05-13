@@ -4,6 +4,9 @@ export type FieldType = 'text' | 'textarea' | 'number' | 'date' | 'email' | 'sel
 
 export type PlaceholderSyncStatus = 'synced' | 'new' | 'removed' | 'modified'
 
+// Field width for dynamic grid layout
+export type FieldWidth = 'compact' | 'medium' | 'large' | 'full'
+
 export interface Placeholder {
   id: string
   name: string
@@ -13,6 +16,7 @@ export interface Placeholder {
   options?: string[] // For select type
   defaultValue?: string
   syncStatus?: PlaceholderSyncStatus
+  width?: FieldWidth // For dynamic grid layout
 }
 
 export interface PlaceholderSyncResult {
