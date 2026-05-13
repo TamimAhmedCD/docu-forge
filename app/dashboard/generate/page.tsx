@@ -26,7 +26,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { DatePicker } from '@/components/ui/date-picker'
 import { useTemplates } from '@/hooks/use-templates'
 import { useFormStorage } from '@/hooks/use-form-storage'
 import { Template, FormData as FormDataType, GeneratedDocument } from '@/types'
@@ -412,17 +411,10 @@ function GeneratePageContent() {
                                 ))}
                               </SelectContent>
                             </Select>
-                          ) : placeholder.type === 'date' ? (
-                            <DatePicker
-                              id={placeholder.id}
-                              value={formData[placeholder.id] as string | Date | undefined}
-                              onChange={(date) => handleInputChange(placeholder.id, date?.toISOString() || '')}
-                              placeholder={`Select ${placeholder.label.toLowerCase()}`}
-                            />
                           ) : (
                             <Input
                               id={placeholder.id}
-                              type={placeholder.type === 'number' ? 'number' : placeholder.type === 'email' ? 'email' : 'text'}
+                              type={placeholder.type === 'number' ? 'number' : placeholder.type === 'date' ? 'date' : placeholder.type === 'email' ? 'email' : 'text'}
                               value={(formData[placeholder.id] as string) || ''}
                               onChange={(e) => handleInputChange(placeholder.id, e.target.value)}
                               placeholder={`Enter ${placeholder.label.toLowerCase()}`}
