@@ -30,6 +30,7 @@ import { useTemplates } from '@/hooks/use-templates'
 import { useFormStorage } from '@/hooks/use-form-storage'
 import { Template, FormData as FormDataType, GeneratedDocument } from '@/types'
 import { generateDocx, generatePdf, downloadDocument } from '@/lib/document-generator'
+import { formatDateTimeDDMMYYYY } from '@/lib/date-formatter'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import mammoth from 'mammoth'
@@ -509,7 +510,7 @@ function GeneratePageContent() {
                       <div>
                         <p className="font-medium text-foreground">{doc.fileName}</p>
                         <p className="text-sm text-muted-foreground">
-                          {doc.type.toUpperCase()} · Generated just now
+                          {doc.type.toUpperCase()} · {formatDateTimeDDMMYYYY(doc.generatedAt)}
                         </p>
                       </div>
                     </div>

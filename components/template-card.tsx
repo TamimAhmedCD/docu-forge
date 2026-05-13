@@ -12,7 +12,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { Template } from '@/types'
 import { useTemplates } from '@/hooks/use-templates'
-import { formatDistanceToNow } from 'date-fns'
+import { formatDateDDMMYYYY } from '@/lib/date-formatter'
 import { toast } from 'sonner'
 
 interface TemplateCardProps {
@@ -79,7 +79,7 @@ export function TemplateCard({ template }: TemplateCardProps) {
 
       <div className="mt-4 flex items-center justify-between border-t border-border pt-4">
         <span className="text-xs text-muted-foreground">
-          {formatDistanceToNow(template.updatedAt, { addSuffix: true })}
+          {formatDateDDMMYYYY(template.updatedAt)}
         </span>
         <Link href={`/dashboard/generate?template=${template.id}`}>
           <Button size="sm" variant="secondary">
