@@ -46,15 +46,15 @@ export default function DashboardLayout({
         )}
       </AnimatePresence>
 
-      {/* Sidebar - Fixed width */}
+      {/* Sidebar - Fixed width and height */}
       <aside
         className={cn(
-          'fixed inset-y-0 left-0 z-50 w-64 flex flex-col border-r border-sidebar-border bg-sidebar transition-transform duration-300 lg:static lg:translate-x-0',
+          'fixed inset-y-0 left-0 z-50 w-64 flex flex-col border-r border-sidebar-border bg-sidebar transition-transform duration-300 lg:static lg:translate-x-0 lg:h-screen',
           sidebarOpen ? 'translate-x-0' : '-translate-x-full'
         )}
       >
         {/* Logo */}
-        <div className="flex h-16 items-center justify-between border-b border-sidebar-border px-4">
+        <div className="flex h-16 flex-shrink-0 items-center justify-between border-b border-sidebar-border px-4">
           <Link href="/" className="flex items-center gap-2">
             <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-sidebar-primary">
               <FileText className="h-4 w-4 text-sidebar-primary-foreground" />
@@ -71,8 +71,8 @@ export default function DashboardLayout({
           </Button>
         </div>
 
-        {/* Navigation */}
-        <nav className="flex-1 space-y-1 p-4">
+        {/* Navigation - Scrollable */}
+        <nav className="flex-1 space-y-1 overflow-y-auto p-4">
           {navigation.map((item) => {
             const isActive = pathname === item.href
             return (
@@ -97,8 +97,8 @@ export default function DashboardLayout({
           })}
         </nav>
 
-        {/* Bottom section */}
-        <div className="border-t border-sidebar-border p-4">
+        {/* Bottom section - Fixed */}
+        <div className="flex-shrink-0 border-t border-sidebar-border p-4">
           <div className="rounded-lg bg-sidebar-accent/50 p-4">
             <p className="text-xs text-sidebar-foreground/70">
               All processing happens locally in your browser. No data is sent to any server.

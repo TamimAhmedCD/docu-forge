@@ -59,35 +59,51 @@ function GeneratePageContent() {
   }, [templateId, templates])
 
   // Extract document HTML when templates are selected (for preview with formatting)
-  // Only extract for the preview template to avoid processing all files
+  useEffect(() => {
+    // Set first selected template as preview
+    if (selectedTemplates.length > 0 && !previewTemplate) {
+      setPreviewTemplate(selectedTemplates[0])
+    }
+  }, [selectedTemplates, previewTemplate])
+
+  // Separate effect for extracting HTML to avoid dependency issues
   useEffect(() => {
     const extractHtml = async () => {
-      // Set first selected template as preview
-      if (selectedTemplates.length > 0 && !previewTemplate) {
-        setPreviewTemplate(selectedTemplates[0])
-      }
+      if (!previewTemplate || documentHtml[previewTemplate]) return
 
-      // Only extract HTML for the preview template
-      if (previewTemplate && !documentHtml[previewTemplate]) {
-        setLoadingPreview(true)
-        const template = templates.find(t => t.id === previewTemplate)
-        if (template?.fileContent) {
+      setLoadingPreview(true)
+      const template = templates.find(t => t.id === previewTemplate)
+      
+      if (template?.fileContent) {
+        try {
+          console.log('[v0] Starting HTML extraction for template:', previewTemplate)
+          // Create a promise with timeout to prevent hanging on large files
+          const extractPromise = mammoth.convertToHtml({ arrayBuffer: template.fileContent })
+          const timeoutPromise = new Promise((_, reject) => 
+            setTimeout(() => reject(new Error('Extraction timeout')), 30000) // 30 second timeout
+          )
+          
+          const result = await Promise.race([extractPromise, timeoutPromise]) as any
+          console.log('[v0] HTML extraction successful')
+          setDocumentHtml(prev => ({ ...prev, [previewTemplate]: result.value }))
+          setLoadingPreview(false)
+        } catch (error) {
+          console.error('[v0] Failed to extract HTML:', error)
+          // Generate basic text preview as fallback
           try {
-            // Use convertToHtml to preserve formatting
-            const result = await mammoth.convertToHtml({ arrayBuffer: template.fileContent })
-            setDocumentHtml(prev => ({ ...prev, [previewTemplate]: result.value }))
-          } catch (error) {
-            console.error('[v0] Failed to extract HTML:', error)
-            // Show placeholder if extraction fails
-            setDocumentHtml(prev => ({ ...prev, [previewTemplate]: '<p>Preview unavailable</p>' }))
-          } finally {
-            setLoadingPreview(false)
+            const textResult = await mammoth.extractRawText({ arrayBuffer: template.fileContent })
+            const basicHtml = `<p>${textResult.value.split('\n').join('</p><p>')}</p>`
+            setDocumentHtml(prev => ({ ...prev, [previewTemplate]: basicHtml }))
+          } catch {
+            setDocumentHtml(prev => ({ ...prev, [previewTemplate]: '<p>Document loaded (preview formatting unavailable)</p>' }))
           }
+          setLoadingPreview(false)
         }
       }
     }
+
     extractHtml()
-  }, [previewTemplate, selectedTemplates, templates, documentHtml])
+  }, [previewTemplate, templates, documentHtml])
 
   // Generate preview HTML with placeholders replaced
   const previewHtml = useMemo(() => {
