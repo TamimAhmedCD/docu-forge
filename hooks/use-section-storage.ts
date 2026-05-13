@@ -1,8 +1,6 @@
-import { useState, useCallback, useEffect } from 'react'
+import { useState, useCallback, useEffect, useRef } from 'react'
 import { FormSection, SectionConfig, Placeholder } from '@/types'
 import { createDefaultSectionConfig, syncSectionsWithPlaceholders } from '@/lib/section-grouping'
-
-const SECTION_CONFIG_KEY = 'document-generator-section-config'
 
 interface SectionStorageResult {
   sections: FormSection[]
@@ -17,44 +15,65 @@ interface SectionStorageResult {
 export function useSectionStorage(templateIds: string[]): SectionStorageResult {
   const [sectionConfigs, setSectionConfigs] = useState<Record<string, SectionConfig>>({})
   const [isLoaded, setIsLoaded] = useState(false)
+  const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null)
 
   // Create a composite key for the selected templates
   const configKey = templateIds.sort().join('|')
 
-  // Load section configs from localStorage on mount
+  // Load section config from MongoDB on mount or when templateIds change
   useEffect(() => {
-    if (typeof window !== 'undefined') {
+    if (!configKey) {
+      setIsLoaded(true)
+      return
+    }
+
+    const loadConfig = async () => {
       try {
-        const stored = localStorage.getItem(SECTION_CONFIG_KEY)
-        if (stored) {
-          const parsed = JSON.parse(stored)
-          // Convert date strings back to Date objects
-          const restored: Record<string, SectionConfig> = {}
-          for (const [key, config] of Object.entries(parsed)) {
-            const c = config as SectionConfig
-            restored[key] = {
-              ...c,
-              lastModified: new Date(c.lastModified),
-            }
+        const response = await fetch(`/api/section-config?templateKey=${encodeURIComponent(configKey)}`)
+        if (response.ok) {
+          const data = await response.json()
+          if (data) {
+            setSectionConfigs(prev => ({
+              ...prev,
+              [configKey]: {
+                sections: data.sections,
+                isAutoGrouped: data.isAutoGrouped,
+                lastModified: new Date(data.lastModified),
+              },
+            }))
           }
-          setSectionConfigs(restored)
         }
       } catch (error) {
-        console.error('Failed to load section config from localStorage:', error)
+        console.error('Failed to load section config from MongoDB:', error)
+      } finally {
+        setIsLoaded(true)
       }
-      setIsLoaded(true)
     }
-  }, [])
 
-  // Save to localStorage whenever configs change
-  const saveConfigs = useCallback((configs: Record<string, SectionConfig>) => {
-    if (typeof window !== 'undefined') {
-      try {
-        localStorage.setItem(SECTION_CONFIG_KEY, JSON.stringify(configs))
-      } catch (error) {
-        console.error('Failed to save section config to localStorage:', error)
-      }
+    loadConfig()
+  }, [configKey])
+
+  // Debounced save to MongoDB
+  const saveToDatabase = useCallback((key: string, config: SectionConfig) => {
+    if (saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current)
     }
+
+    saveTimeoutRef.current = setTimeout(async () => {
+      try {
+        await fetch('/api/section-config', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            templateKey: key,
+            sections: config.sections,
+            isAutoGrouped: config.isAutoGrouped,
+          }),
+        })
+      } catch (error) {
+        console.error('Failed to save section config to MongoDB:', error)
+      }
+    }, 500) // Debounce 500ms to avoid too many saves during rapid changes
   }, [])
 
   // Get current config or default
@@ -70,10 +89,10 @@ export function useSectionStorage(templateIds: string[]): SectionStorageResult {
           lastModified: new Date(),
         },
       }
-      saveConfigs(updated)
+      saveToDatabase(configKey, updated[configKey])
       return updated
     })
-  }, [configKey, saveConfigs])
+  }, [configKey, saveToDatabase])
 
   const setIsAutoGrouped = useCallback((value: boolean) => {
     setSectionConfigs(prev => {
@@ -86,10 +105,10 @@ export function useSectionStorage(templateIds: string[]): SectionStorageResult {
           lastModified: new Date(),
         },
       }
-      saveConfigs(updated)
+      saveToDatabase(configKey, updated[configKey])
       return updated
     })
-  }, [configKey, saveConfigs])
+  }, [configKey, saveToDatabase])
 
   const syncWithPlaceholders = useCallback((placeholders: Placeholder[]) => {
     setSectionConfigs(prev => {
@@ -99,7 +118,7 @@ export function useSectionStorage(templateIds: string[]): SectionStorageResult {
         // Create new config with auto-grouped sections
         const newConfig = createDefaultSectionConfig(placeholders)
         const updated = { ...prev, [configKey]: newConfig }
-        saveConfigs(updated)
+        saveToDatabase(configKey, newConfig)
         return updated
       }
 
@@ -110,27 +129,38 @@ export function useSectionStorage(templateIds: string[]): SectionStorageResult {
         existing.isAutoGrouped
       )
 
+      const updatedConfig = {
+        ...existing,
+        sections: syncedSections,
+        lastModified: new Date(),
+      }
+
       const updated = {
         ...prev,
-        [configKey]: {
-          ...existing,
-          sections: syncedSections,
-          lastModified: new Date(),
-        },
+        [configKey]: updatedConfig,
       }
-      saveConfigs(updated)
+      saveToDatabase(configKey, updatedConfig)
       return updated
     })
-  }, [configKey, saveConfigs])
+  }, [configKey, saveToDatabase])
 
   const resetToDefault = useCallback((placeholders: Placeholder[]) => {
     const newConfig = createDefaultSectionConfig(placeholders)
     setSectionConfigs(prev => {
       const updated = { ...prev, [configKey]: newConfig }
-      saveConfigs(updated)
+      saveToDatabase(configKey, newConfig)
       return updated
     })
-  }, [configKey, saveConfigs])
+  }, [configKey, saveToDatabase])
+
+  // Cleanup timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current)
+      }
+    }
+  }, [])
 
   return {
     sections: currentConfig?.sections || [],

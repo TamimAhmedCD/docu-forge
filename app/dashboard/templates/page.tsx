@@ -2,7 +2,7 @@
 
 import { motion } from 'framer-motion'
 import Link from 'next/link'
-import { FileText, Plus, Search } from 'lucide-react'
+import { FileText, Plus, Search, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { useTemplates } from '@/hooks/use-templates'
@@ -10,7 +10,7 @@ import { TemplateCard } from '@/components/template-card'
 import { useState } from 'react'
 
 export default function TemplatesPage() {
-  const { templates } = useTemplates()
+  const { templates, isLoading } = useTemplates()
   const [search, setSearch] = useState('')
 
   const filteredTemplates = templates.filter((template) =>
@@ -67,7 +67,12 @@ export default function TemplatesPage() {
         transition={{ duration: 0.3, delay: 0.2 }}
         className="mt-8"
       >
-        {templates.length === 0 ? (
+        {isLoading ? (
+          <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border bg-muted/30 py-16">
+            <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+            <p className="mt-4 text-sm text-muted-foreground">Loading templates...</p>
+          </div>
+        ) : templates.length === 0 ? (
           <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border bg-muted/30 py-16">
             <div className="flex h-16 w-16 items-center justify-center rounded-full bg-muted">
               <FileText className="h-8 w-8 text-muted-foreground" />

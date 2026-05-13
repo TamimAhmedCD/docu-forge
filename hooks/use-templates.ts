@@ -1,6 +1,6 @@
 'use client'
 
-import { useSyncExternalStore, useCallback } from 'react'
+import { useSyncExternalStore, useCallback, useEffect, useState } from 'react'
 import * as store from '@/lib/template-store'
 import { Template, Placeholder, PlaceholderSyncResult } from '@/types'
 import mammoth from 'mammoth'
@@ -8,11 +8,22 @@ import { detectPlaceholders } from '@/lib/placeholder-utils'
 import { syncPlaceholders, clearSyncStatus } from '@/lib/placeholder-sync'
 
 export function useTemplates() {
+  const [isLoading, setIsLoading] = useState(!store.isStoreInitialized())
+  
   const templates = useSyncExternalStore(
     store.subscribe,
     store.getTemplates,
     store.getServerTemplates // Use server snapshot for SSR
   )
+
+  // Initialize from MongoDB on mount
+  useEffect(() => {
+    if (!store.isStoreInitialized()) {
+      store.initializeFromDatabase().then(() => {
+        setIsLoading(false)
+      })
+    }
+  }, [])
 
   const addTemplate = useCallback(async (file: File) => {
     const fileContent = await file.arrayBuffer()
@@ -31,26 +42,26 @@ export function useTemplates() {
       updatedAt: new Date(),
     }
 
-    store.addTemplate(template)
+    await store.addTemplate(template)
     return template
   }, [])
 
-  const updateTemplate = useCallback((id: string, updates: Partial<Template>) => {
-    store.updateTemplate(id, updates)
+  const updateTemplate = useCallback(async (id: string, updates: Partial<Template>) => {
+    await store.updateTemplate(id, updates)
   }, [])
 
-  const removeTemplate = useCallback((id: string) => {
-    store.removeTemplate(id)
+  const removeTemplate = useCallback(async (id: string) => {
+    await store.removeTemplate(id)
   }, [])
 
   const getTemplate = useCallback((id: string) => {
     return store.getTemplate(id)
   }, [])
 
-  const updatePlaceholders = useCallback((templateId: string, placeholders: Placeholder[]) => {
+  const updatePlaceholders = useCallback(async (templateId: string, placeholders: Placeholder[]) => {
     // Clear sync status before saving
     const cleanedPlaceholders = clearSyncStatus(placeholders)
-    store.updateTemplate(templateId, { placeholders: cleanedPlaceholders })
+    await store.updateTemplate(templateId, { placeholders: cleanedPlaceholders })
   }, [])
 
   /**
@@ -73,7 +84,7 @@ export function useTemplates() {
     const syncResult = syncPlaceholders(existingTemplate.placeholders, result.value)
     
     // Update template with new file and synced placeholders
-    store.updateTemplate(templateId, {
+    await store.updateTemplate(templateId, {
       name: file.name,
       file: new File([fileContent], file.name, { type: file.type }),
       fileContent,
@@ -87,13 +98,14 @@ export function useTemplates() {
   /**
    * Save placeholders with cleared sync status
    */
-  const savePlaceholdersClean = useCallback((templateId: string, placeholders: Placeholder[]) => {
+  const savePlaceholdersClean = useCallback(async (templateId: string, placeholders: Placeholder[]) => {
     const cleanedPlaceholders = clearSyncStatus(placeholders)
-    store.updateTemplate(templateId, { placeholders: cleanedPlaceholders })
+    await store.updateTemplate(templateId, { placeholders: cleanedPlaceholders })
   }, [])
 
   return {
     templates,
+    isLoading,
     addTemplate,
     updateTemplate,
     removeTemplate,

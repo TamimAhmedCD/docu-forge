@@ -5,72 +5,12 @@ import { Template, GeneratedDocument } from '@/types'
 let templates: Template[] = []
 let generatedDocuments: GeneratedDocument[] = []
 let listeners: Set<() => void> = new Set()
+let isInitialized = false
+let initPromise: Promise<void> | null = null
 
 // Server snapshot for SSR - empty array with stable reference
 const emptyTemplates: Template[] = []
 const emptyDocuments: GeneratedDocument[] = []
-
-const TEMPLATES_STORAGE_KEY = 'document-generator-templates'
-const DOCUMENTS_STORAGE_KEY = 'document-generator-documents'
-
-// Initialize from localStorage if available
-function initializeFromStorage() {
-  if (typeof window !== 'undefined') {
-    try {
-      const storedTemplates = localStorage.getItem(TEMPLATES_STORAGE_KEY)
-      const storedDocuments = localStorage.getItem(DOCUMENTS_STORAGE_KEY)
-      
-      if (storedTemplates) {
-        const parsed = JSON.parse(storedTemplates)
-        templates = parsed.map((t: any) => ({
-          ...t,
-          createdAt: new Date(t.createdAt),
-          updatedAt: new Date(t.updatedAt),
-        }))
-      }
-      
-      if (storedDocuments) {
-        const parsed = JSON.parse(storedDocuments)
-        generatedDocuments = parsed.map((d: any) => ({
-          ...d,
-          generatedAt: new Date(d.generatedAt),
-        }))
-      }
-    } catch (error) {
-      console.error('Failed to initialize from localStorage:', error)
-    }
-  }
-}
-
-function saveToLocalStorage() {
-  if (typeof window !== 'undefined') {
-    try {
-      // Store templates without File objects (convert fileContent to base64)
-      const templatesData = templates.map(t => ({
-        id: t.id,
-        name: t.name,
-        fileContent: t.fileContent ? Array.from(new Uint8Array(t.fileContent)).map(b => String.fromCharCode(b)).join('') : '',
-        placeholders: t.placeholders,
-        createdAt: t.createdAt.toISOString(),
-        updatedAt: t.updatedAt.toISOString(),
-      }))
-      
-      const documentsData = generatedDocuments.map(d => ({
-        id: d.id,
-        templateId: d.templateId,
-        templateName: d.templateName,
-        fileName: d.fileName,
-        type: d.type,
-        generatedAt: d.generatedAt.toISOString(),
-      }))
-      
-      localStorage.setItem(TEMPLATES_STORAGE_KEY, JSON.stringify(templatesData))
-      localStorage.setItem(DOCUMENTS_STORAGE_KEY, JSON.stringify(documentsData))
-    } catch (error) {
-      console.error('Failed to save to localStorage:', error)
-    }
-  }
-}
 
 function notifyListeners() {
   listeners.forEach(listener => listener())
@@ -95,24 +35,125 @@ export function getTemplate(id: string): Template | undefined {
   return templates.find(t => t.id === id)
 }
 
-export function addTemplate(template: Template): void {
-  templates = [...templates, template]
-  notifyListeners()
-  saveToLocalStorage()
+export function isStoreInitialized(): boolean {
+  return isInitialized
 }
 
-export function updateTemplate(id: string, updates: Partial<Template>): void {
+// Initialize from MongoDB
+export async function initializeFromDatabase(): Promise<void> {
+  if (isInitialized) return
+  if (initPromise) return initPromise
+
+  initPromise = (async () => {
+    try {
+      const response = await fetch('/api/templates')
+      if (response.ok) {
+        const data = await response.json()
+        templates = data.map((t: any) => ({
+          ...t,
+          // Reconstruct File-like object from base64
+          fileContent: t.fileContent 
+            ? Uint8Array.from(atob(t.fileContent), c => c.charCodeAt(0)).buffer
+            : null,
+          file: null, // File object can't be reconstructed, will be created when needed
+          createdAt: new Date(t.createdAt),
+          updatedAt: new Date(t.updatedAt),
+        }))
+        notifyListeners()
+      }
+    } catch (error) {
+      console.error('Failed to initialize from MongoDB:', error)
+    } finally {
+      isInitialized = true
+    }
+  })()
+
+  return initPromise
+}
+
+// Helper to convert ArrayBuffer to base64
+function arrayBufferToBase64(buffer: ArrayBuffer): string {
+  const bytes = new Uint8Array(buffer)
+  let binary = ''
+  for (let i = 0; i < bytes.byteLength; i++) {
+    binary += String.fromCharCode(bytes[i])
+  }
+  return btoa(binary)
+}
+
+export async function addTemplate(template: Template): Promise<void> {
+  // Add to local state immediately for UI responsiveness
+  templates = [...templates, template]
+  notifyListeners()
+
+  // Persist to MongoDB
+  try {
+    const response = await fetch('/api/templates', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        id: template.id,
+        name: template.name,
+        fileContent: template.fileContent ? arrayBufferToBase64(template.fileContent) : '',
+        placeholders: template.placeholders,
+      }),
+    })
+    
+    if (!response.ok) {
+      console.error('Failed to save template to MongoDB')
+    }
+  } catch (error) {
+    console.error('Failed to save template to MongoDB:', error)
+  }
+}
+
+export async function updateTemplate(id: string, updates: Partial<Template>): Promise<void> {
+  // Update local state immediately
   templates = templates.map(t => 
     t.id === id ? { ...t, ...updates, updatedAt: new Date() } : t
   )
   notifyListeners()
-  saveToLocalStorage()
+
+  // Persist to MongoDB
+  try {
+    const updateData: Record<string, any> = {}
+    if (updates.name !== undefined) updateData.name = updates.name
+    if (updates.placeholders !== undefined) updateData.placeholders = updates.placeholders
+    if (updates.fileContent !== undefined) {
+      updateData.fileContent = arrayBufferToBase64(updates.fileContent)
+    }
+
+    const response = await fetch(`/api/templates/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(updateData),
+    })
+    
+    if (!response.ok) {
+      console.error('Failed to update template in MongoDB')
+    }
+  } catch (error) {
+    console.error('Failed to update template in MongoDB:', error)
+  }
 }
 
-export function removeTemplate(id: string): void {
+export async function removeTemplate(id: string): Promise<void> {
+  // Remove from local state immediately
   templates = templates.filter(t => t.id !== id)
   notifyListeners()
-  saveToLocalStorage()
+
+  // Remove from MongoDB
+  try {
+    const response = await fetch(`/api/templates/${id}`, {
+      method: 'DELETE',
+    })
+    
+    if (!response.ok) {
+      console.error('Failed to delete template from MongoDB')
+    }
+  } catch (error) {
+    console.error('Failed to delete template from MongoDB:', error)
+  }
 }
 
 // Returns stable reference
@@ -128,14 +169,10 @@ export function getServerGeneratedDocuments(): GeneratedDocument[] {
 export function addGeneratedDocument(doc: GeneratedDocument): void {
   generatedDocuments = [...generatedDocuments, doc]
   notifyListeners()
-  saveToLocalStorage()
+  // Generated documents are kept in memory only (they contain Blob objects)
 }
 
 export function clearGeneratedDocuments(): void {
   generatedDocuments = []
   notifyListeners()
-  saveToLocalStorage()
 }
-
-// Initialize storage on module load
-initializeFromStorage()
