@@ -15,8 +15,6 @@ import {
 } from 'lucide-react'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
 import { Checkbox } from '@/components/ui/checkbox'
 import {
@@ -28,7 +26,10 @@ import {
 } from '@/components/ui/select'
 import { useTemplates } from '@/hooks/use-templates'
 import { useFormStorage } from '@/hooks/use-form-storage'
+import { useSectionStorage } from '@/hooks/use-section-storage'
 import { Template, FormData as FormDataType, GeneratedDocument } from '@/types'
+import { SectionForm } from '@/components/section-form'
+import { createDefaultSectionConfig } from '@/lib/section-grouping'
 import { generateDocx, generatePdf, downloadDocument } from '@/lib/document-generator'
 import { formatDateDDMMYYYY } from '@/lib/date-formatter'
 import { toast } from 'sonner'
@@ -41,8 +42,15 @@ function GeneratePageContent() {
   const templateId = searchParams.get('template')
   const { templates } = useTemplates()
   const { formData, updateFormData, clearFormData, isLoaded } = useFormStorage()
-  
   const [selectedTemplates, setSelectedTemplates] = useState<string[]>([])
+  const {
+    sections,
+    isAutoGrouped,
+    isLoaded: sectionsLoaded,
+    setSections,
+    setIsAutoGrouped,
+    syncWithPlaceholders,
+  } = useSectionStorage(selectedTemplates)
   const [isGenerating, setIsGenerating] = useState(false)
   const [generatedDocs, setGeneratedDocs] = useState<GeneratedDocument[]>([])
   const [outputFormat, setOutputFormat] = useState<'docx' | 'pdf'>('docx')
@@ -57,6 +65,20 @@ function GeneratePageContent() {
       setSelectedTemplates([templateId])
     }
   }, [templateId, templates])
+
+  // Sync sections when placeholders change
+  useEffect(() => {
+    if (allPlaceholders.length > 0 && sectionsLoaded) {
+      if (sections.length === 0) {
+        // Initialize sections if none exist
+        const defaultConfig = createDefaultSectionConfig(allPlaceholders)
+        setSections(defaultConfig.sections)
+      } else {
+        // Sync existing sections with current placeholders
+        syncWithPlaceholders(allPlaceholders)
+      }
+    }
+  }, [allPlaceholders.length, sectionsLoaded])
 
   // Extract document HTML when templates are selected (for preview with formatting)
   useEffect(() => {
@@ -378,51 +400,15 @@ function GeneratePageContent() {
                     </div>
                   </div>
                   <div className="max-h-[600px] overflow-y-auto overflow-x-hidden p-4">
-                    <div className="space-y-4">
-                      {allPlaceholders.map((placeholder) => (
-                        <div key={placeholder.id} className="space-y-2">
-                          <Label htmlFor={placeholder.id}>
-                            {placeholder.label}
-                            {placeholder.required && (
-                              <span className="ml-1 text-destructive">*</span>
-                            )}
-                          </Label>
-                          {placeholder.type === 'textarea' ? (
-                            <Textarea
-                              id={placeholder.id}
-                              value={(formData[placeholder.id] as string) || ''}
-                              onChange={(e) => handleInputChange(placeholder.id, e.target.value)}
-                              placeholder={`Enter ${placeholder.label.toLowerCase()}`}
-                              rows={3}
-                            />
-                          ) : placeholder.type === 'select' ? (
-                            <Select
-                              value={(formData[placeholder.id] as string) || ''}
-                              onValueChange={(v) => handleInputChange(placeholder.id, v)}
-                            >
-                              <SelectTrigger>
-                                <SelectValue placeholder={`Select ${placeholder.label.toLowerCase()}`} />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {placeholder.options?.map((option) => (
-                                  <SelectItem key={option} value={option}>
-                                    {option}
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                          ) : (
-                            <Input
-                              id={placeholder.id}
-                              type={placeholder.type === 'number' ? 'number' : placeholder.type === 'date' ? 'date' : placeholder.type === 'email' ? 'email' : 'text'}
-                              value={(formData[placeholder.id] as string) || ''}
-                              onChange={(e) => handleInputChange(placeholder.id, e.target.value)}
-                              placeholder={`Enter ${placeholder.label.toLowerCase()}`}
-                            />
-                          )}
-                        </div>
-                      ))}
-                    </div>
+                    <SectionForm
+                      sections={sections}
+                      placeholders={allPlaceholders}
+                      formData={formData}
+                      onSectionsChange={setSections}
+                      onFormDataChange={handleInputChange}
+                      isAutoGrouped={isAutoGrouped}
+                      onAutoGroupedChange={setIsAutoGrouped}
+                    />
                   </div>
                   <div className="border-t border-border p-4">
                     <Button

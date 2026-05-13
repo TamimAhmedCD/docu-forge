@@ -51,3 +51,18 @@ export interface TemplateEditorState {
   isAutoDetectMode: boolean
   selectedPlaceholder: Placeholder | null
 }
+
+// Section types for dynamic form grouping
+export interface FormSection {
+  id: string
+  name: string
+  placeholderIds: string[]
+  order: number
+  isExpanded: boolean
+}
+
+export interface SectionConfig {
+  sections: FormSection[]
+  isAutoGrouped: boolean
+  lastModified: Date
+}
