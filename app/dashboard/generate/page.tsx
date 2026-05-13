@@ -50,6 +50,7 @@ function GeneratePageContent() {
   const [documentHtml, setDocumentHtml] = useState<Record<string, string>>({})
   const [previewTemplate, setPreviewTemplate] = useState<string | null>(null)
   const [sidebarOpen, setSidebarOpen] = useState(true)
+  const [loadingPreview, setLoadingPreview] = useState(false)
 
   useEffect(() => {
     if (templateId && templates.find(t => t.id === templateId)) {
@@ -58,28 +59,35 @@ function GeneratePageContent() {
   }, [templateId, templates])
 
   // Extract document HTML when templates are selected (for preview with formatting)
+  // Only extract for the preview template to avoid processing all files
   useEffect(() => {
     const extractHtml = async () => {
-      for (const id of selectedTemplates) {
-        if (documentHtml[id]) continue
-        const template = templates.find(t => t.id === id)
-        if (template?.fileContent) {
-          try {
-            // Use convertToHtml to preserve formatting
-            const result = await mammoth.convertToHtml({ arrayBuffer: template.fileContent })
-            setDocumentHtml(prev => ({ ...prev, [id]: result.value }))
-          } catch {
-            // Ignore extraction errors
-          }
-        }
-      }
       // Set first selected template as preview
       if (selectedTemplates.length > 0 && !previewTemplate) {
         setPreviewTemplate(selectedTemplates[0])
       }
+
+      // Only extract HTML for the preview template
+      if (previewTemplate && !documentHtml[previewTemplate]) {
+        setLoadingPreview(true)
+        const template = templates.find(t => t.id === previewTemplate)
+        if (template?.fileContent) {
+          try {
+            // Use convertToHtml to preserve formatting
+            const result = await mammoth.convertToHtml({ arrayBuffer: template.fileContent })
+            setDocumentHtml(prev => ({ ...prev, [previewTemplate]: result.value }))
+          } catch (error) {
+            console.error('[v0] Failed to extract HTML:', error)
+            // Show placeholder if extraction fails
+            setDocumentHtml(prev => ({ ...prev, [previewTemplate]: '<p>Preview unavailable</p>' }))
+          } finally {
+            setLoadingPreview(false)
+          }
+        }
+      }
     }
     extractHtml()
-  }, [selectedTemplates, templates, documentHtml, previewTemplate])
+  }, [previewTemplate, selectedTemplates, templates, documentHtml])
 
   // Generate preview HTML with placeholders replaced
   const previewHtml = useMemo(() => {
@@ -453,14 +461,19 @@ function GeneratePageContent() {
                         )}
                       </div>
                       <div className="max-h-[500px] overflow-auto p-4">
-                        <div className="rounded-lg border border-border bg-white p-6 text-black">
-                          {previewHtml ? (
+                        <div className="rounded-lg border border-border bg-white p-6 text-black min-h-[200px] flex items-center justify-center">
+                          {loadingPreview ? (
+                            <div className="flex flex-col items-center gap-3">
+                              <div className="h-8 w-8 animate-spin rounded-full border-4 border-gray-300 border-t-blue-500" />
+                              <p className="text-sm text-gray-500">Processing large document...</p>
+                            </div>
+                          ) : previewHtml ? (
                             <div 
-                              className="prose prose-sm max-w-none [&_p]:my-2 [&_h1]:text-xl [&_h1]:font-bold [&_h2]:text-lg [&_h2]:font-semibold [&_table]:border-collapse [&_td]:border [&_td]:border-gray-300 [&_td]:p-2 [&_th]:border [&_th]:border-gray-300 [&_th]:p-2 [&_th]:bg-gray-100 [&_img]:max-w-full"
+                              className="prose prose-sm max-w-none w-full [&_p]:my-2 [&_h1]:text-xl [&_h1]:font-bold [&_h2]:text-lg [&_h2]:font-semibold [&_table]:border-collapse [&_td]:border [&_td]:border-gray-300 [&_td]:p-2 [&_th]:border [&_th]:border-gray-300 [&_th]:p-2 [&_th]:bg-gray-100 [&_img]:max-w-full"
                               dangerouslySetInnerHTML={{ __html: previewHtml }}
                             />
                           ) : (
-                            <p className="text-muted-foreground">Loading preview...</p>
+                            <p className="text-gray-400">Select a template to see preview</p>
                           )}
                         </div>
                       </div>
