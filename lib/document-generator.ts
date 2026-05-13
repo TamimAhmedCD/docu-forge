@@ -1,47 +1,35 @@
 import PizZip from 'pizzip'
+import Docxtemplater from 'docxtemplater'
 import { saveAs } from 'file-saver'
 import { Template, GeneratedDocument, FormData } from '@/types'
 import { formatDateDDMMYYYY } from '@/lib/date-formatter'
 
-// Extract all text from <w:t> tags within a paragraph, preserving positions
-function extractTextWithPositions(xml: string): { text: string; segments: Array<{ start: number; end: number; tagStart: number; tagEnd: number }> } {
-  const textRegex = /<w:t[^>]*>([^<]*)<\/w:t>/g
-  let match
-  let text = ''
-  const segments: Array<{ start: number; end: number; tagStart: number; tagEnd: number }> = []
-  
-  while ((match = textRegex.exec(xml)) !== null) {
-    const content = match[1]
-    segments.push({
-      start: text.length,
-      end: text.length + content.length,
-      tagStart: match.index,
-      tagEnd: match.index + match[0].length
-    })
-    text += content
-  }
-  
-  return { text, segments }
+function escapeRegexString(str: string): string {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
-// Replace placeholders in XML by working with the extracted text
+// Clean XML content by removing all tags and returning plain text positions
+function getTextContent(xml: string): string {
+  // Extract only text from <w:t> tags
+  const textMatches = xml.match(/<w:t[^>]*>([^<]*)<\/w:t>/g) || []
+  return textMatches.map(match => {
+    const content = match.match(/<w:t[^>]*>([^<]*)<\/w:t>/)
+    return content ? content[1] : ''
+  }).join('')
+}
+
+// Advanced replacement that handles split placeholders across XML tags
 function replacePlaceholdersInXml(
   xmlContent: string,
   placeholders: Template['placeholders'],
   formData: FormData
 ): string {
-  console.log('[v0] Starting placeholder replacement')
-  console.log('[v0] Placeholders:', placeholders.map(p => ({ id: p.id, name: p.name })))
-  console.log('[v0] Form data keys:', Object.keys(formData))
-
-  // First approach: simple text replacement within <w:t> tags
   let result = xmlContent
-  
+
   placeholders.forEach(placeholder => {
     const value = formData[placeholder.id]
-    console.log('[v0] Processing placeholder:', placeholder.name, 'id:', placeholder.id, 'value:', value)
     
-    // Format dates as DD/MM/YYYY
+    // Format dates as DD-MM-YYYY
     const stringValue = value instanceof Date 
       ? formatDateDDMMYYYY(value) 
       : typeof value === 'string' && placeholder.type === 'date' && value
@@ -56,128 +44,153 @@ function replacePlaceholdersInXml(
       .replace(/"/g, '&quot;')
       .replace(/'/g, '&apos;')
 
-    // Try multiple placeholder formats
-    const patterns = [
-      // Exact {{name}} format
-      new RegExp(`\\{\\{\\s*${escapeRegexString(placeholder.name)}\\s*\\}\\}`, 'gi'),
-      // [NAME] format
-      new RegExp(`\\[${escapeRegexString(placeholder.name)}\\]`, 'gi'),
-      // {name} single brace format (some templates use this)
-      new RegExp(`\\{${escapeRegexString(placeholder.name)}\\}`, 'gi'),
+    const placeholderName = placeholder.name
+
+    // Strategy 1: Direct replacement for placeholders that aren't split
+    const directPatterns = [
+      new RegExp(`\\{\\{\\s*${escapeRegexString(placeholderName)}\\s*\\}\\}`, 'gi'),
+      new RegExp(`\\[${escapeRegexString(placeholderName)}\\]`, 'gi'),
+      new RegExp(`\\{${escapeRegexString(placeholderName)}\\}`, 'gi'),
+      new RegExp(`&lt;&lt;${escapeRegexString(placeholderName)}&gt;&gt;`, 'gi'),
+      new RegExp(`<<${escapeRegexString(placeholderName)}>>`, 'gi'),
     ]
 
-    patterns.forEach((pattern, idx) => {
-      const matches = result.match(pattern)
-      if (matches && matches.length > 0) {
-        console.log('[v0] Pattern', idx, 'found', matches.length, 'matches for', placeholder.name)
-        result = result.replace(pattern, escapedValue)
-      }
+    directPatterns.forEach(pattern => {
+      result = result.replace(pattern, escapedValue)
     })
-  })
 
-  // Second approach: handle Word's text splitting where {{ and name and }} are in separate <w:t> tags
-  // We need to find and reconstruct split placeholders
-  placeholders.forEach(placeholder => {
-    const value = formData[placeholder.id]
-    // Format dates as DD/MM/YYYY
-    const stringValue = value instanceof Date 
-      ? formatDateDDMMYYYY(value) 
-      : typeof value === 'string' && placeholder.type === 'date' && value
-        ? formatDateDDMMYYYY(new Date(value))
-        : String(value || '')
-    
-    const escapedValue = stringValue
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&apos;')
+    // Strategy 2: Handle placeholders split across multiple <w:t> tags
+    // Build a regex that allows XML tags between each character of the placeholder
+    const buildSplitPattern = (prefix: string, name: string, suffix: string) => {
+      const xmlBetween = '(?:</w:t>(?:<[^>]*>)*<w:t[^>]*>)?'
+      
+      // Allow XML tags between prefix characters
+      let patternStr = ''
+      for (let i = 0; i < prefix.length; i++) {
+        patternStr += escapeRegexString(prefix[i])
+        if (i < prefix.length - 1) patternStr += xmlBetween
+      }
+      
+      patternStr += xmlBetween + '\\s*'
+      
+      // Allow XML tags between name characters
+      for (let i = 0; i < name.length; i++) {
+        patternStr += escapeRegexString(name[i])
+        if (i < name.length - 1) patternStr += xmlBetween
+      }
+      
+      patternStr += '\\s*' + xmlBetween
+      
+      // Allow XML tags between suffix characters
+      for (let i = 0; i < suffix.length; i++) {
+        patternStr += escapeRegexString(suffix[i])
+        if (i < suffix.length - 1) patternStr += xmlBetween
+      }
+      
+      return new RegExp(patternStr, 'gi')
+    }
 
-    // Pattern to match placeholders split across XML tags
-    // This handles: <w:t>{{</w:t>...<w:t>name</w:t>...<w:t>}}</w:t>
-    // We match opening braces, then content with any XML in between, then closing braces
     const splitPatterns = [
-      // {{ split from name split from }}
-      new RegExp(
-        `(\\{)(<\\/w:t>(?:<[^>]*>)*<w:t[^>]*>)?(\\{)(<\\/w:t>(?:<[^>]*>)*<w:t[^>]*>)?\\s*(${escapeRegexString(placeholder.name)})\\s*(<\\/w:t>(?:<[^>]*>)*<w:t[^>]*>)?(\\})(<\\/w:t>(?:<[^>]*>)*<w:t[^>]*>)?(\\})`,
-        'gi'
-      ),
+      buildSplitPattern('{{', placeholderName, '}}'),
+      buildSplitPattern('[', placeholderName, ']'),
+      buildSplitPattern('{', placeholderName, '}'),
     ]
 
-    splitPatterns.forEach((pattern, idx) => {
-      const matches = result.match(pattern)
-      if (matches && matches.length > 0) {
-        console.log('[v0] Split pattern', idx, 'found', matches.length, 'matches for', placeholder.name)
-        result = result.replace(pattern, escapedValue)
-      }
+    splitPatterns.forEach(pattern => {
+      result = result.replace(pattern, escapedValue)
     })
   })
 
   return result
 }
 
-function escapeRegexString(str: string): string {
-  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-}
-
 export async function generateDocx(
   template: Template,
   formData: FormData
 ): Promise<GeneratedDocument> {
-  console.log('[v0] generateDocx called')
-  console.log('[v0] Template:', template.name)
-  console.log('[v0] Template placeholders:', template.placeholders)
-  console.log('[v0] Form data received:', formData)
-  
   const zip = new PizZip(template.fileContent)
   
-  // Get the document.xml content
-  const documentXml = zip.file('word/document.xml')
-  if (!documentXml) {
-    throw new Error('Invalid DOCX file: missing document.xml')
-  }
-  
-  let xmlContent = documentXml.asText()
-  
-  // Log a sample of the XML to see placeholder format
-  console.log('[v0] XML sample (first 2000 chars):', xmlContent.substring(0, 2000))
-  
-  // Replace placeholders in the XML
-  xmlContent = replacePlaceholdersInXml(xmlContent, template.placeholders, formData)
-  
-  console.log('[v0] XML after replacement (first 2000 chars):', xmlContent.substring(0, 2000))
-  
-  // Update the zip with modified content
-  zip.file('word/document.xml', xmlContent)
-  
-  // Also check and replace in headers/footers if they exist
-  const headerFiles = ['word/header1.xml', 'word/header2.xml', 'word/header3.xml']
-  const footerFiles = ['word/footer1.xml', 'word/footer2.xml', 'word/footer3.xml']
-  
-  for (const fileName of [...headerFiles, ...footerFiles]) {
-    const file = zip.file(fileName)
-    if (file) {
-      let content = file.asText()
-      content = replacePlaceholdersInXml(content, template.placeholders, formData)
-      zip.file(fileName, content)
+  // Try using docxtemplater for proper placeholder handling
+  try {
+    // Prepare data object for docxtemplater
+    const data: Record<string, string> = {}
+    
+    template.placeholders.forEach(placeholder => {
+      const value = formData[placeholder.id]
+      
+      // Format dates as DD-MM-YYYY
+      const stringValue = value instanceof Date 
+        ? formatDateDDMMYYYY(value) 
+        : typeof value === 'string' && placeholder.type === 'date' && value
+          ? formatDateDDMMYYYY(new Date(value))
+          : String(value || '')
+      
+      // Use placeholder name as key (docxtemplater uses {name} format)
+      data[placeholder.name] = stringValue
+    })
+
+    const doc = new Docxtemplater(zip, {
+      paragraphLoop: true,
+      linebreaks: true,
+      delimiters: { start: '{{', end: '}}' },
+    })
+
+    doc.render(data)
+
+    const output = doc.getZip().generate({
+      type: 'blob',
+      mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    })
+
+    const fileName = `${template.name.replace(/\.[^/.]+$/, '')}_generated.docx`
+
+    return {
+      id: crypto.randomUUID(),
+      templateId: template.id,
+      templateName: template.name,
+      fileName,
+      blob: output,
+      type: 'docx',
+      generatedAt: new Date(),
     }
-  }
+  } catch (docxTemplaterError) {
+    // Fallback to manual XML replacement if docxtemplater fails
+    console.log('[v0] Docxtemplater failed, using manual replacement')
+    
+    const freshZip = new PizZip(template.fileContent)
+    
+    // Process all XML files in the document
+    const xmlFiles = [
+      'word/document.xml',
+      'word/header1.xml', 'word/header2.xml', 'word/header3.xml',
+      'word/footer1.xml', 'word/footer2.xml', 'word/footer3.xml',
+    ]
+    
+    for (const fileName of xmlFiles) {
+      const file = freshZip.file(fileName)
+      if (file) {
+        let content = file.asText()
+        content = replacePlaceholdersInXml(content, template.placeholders, formData)
+        freshZip.file(fileName, content)
+      }
+    }
 
-  const output = zip.generate({
-    type: 'blob',
-    mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-  })
+    const output = freshZip.generate({
+      type: 'blob',
+      mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    })
 
-  const fileName = `${template.name.replace(/\.[^/.]+$/, '')}_generated.docx`
+    const fileName = `${template.name.replace(/\.[^/.]+$/, '')}_generated.docx`
 
-  return {
-    id: crypto.randomUUID(),
-    templateId: template.id,
-    templateName: template.name,
-    fileName,
-    blob: output,
-    type: 'docx',
-    generatedAt: new Date(),
+    return {
+      id: crypto.randomUUID(),
+      templateId: template.id,
+      templateName: template.name,
+      fileName,
+      blob: output,
+      type: 'docx',
+      generatedAt: new Date(),
+    }
   }
 }
 
@@ -185,19 +198,11 @@ export async function generatePdf(
   template: Template,
   formData: FormData
 ): Promise<GeneratedDocument> {
-  // Generate DOCX first with placeholders replaced (preserving all formatting)
+  // Generate DOCX first with placeholders replaced
   const docResult = await generateDocx(template, formData)
   
-  // Note: True DOCX to PDF conversion with full formatting requires server-side tools
-  // For now, we generate the DOCX but save as PDF-compatible format
-  // The best option for users who need PDF is to download DOCX and use Word/LibreOffice to convert
-  
-  // Return the DOCX blob but indicate it's meant for PDF
-  // The user should be informed that DOCX download preserves formatting better
   const fileName = `${template.name.replace(/\.[^/.]+$/, '')}_generated.pdf`
 
-  // For a basic PDF, we'll extract the content and create a simple PDF
-  // This won't preserve complex formatting but will show the replaced content
   const { PDFDocument, rgb, StandardFonts } = await import('pdf-lib')
   const mammoth = await import('mammoth')
   
