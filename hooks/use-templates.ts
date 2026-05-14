@@ -9,7 +9,8 @@ import { syncPlaceholders, clearSyncStatus } from '@/lib/placeholder-sync'
 import { preserveFormDataOnUpdate, deleteTemplateFormData } from '@/hooks/use-form-storage'
 
 export function useTemplates() {
-  const [isLoading, setIsLoading] = useState(!store.isStoreInitialized())
+  // Track loading state from store for all pages
+  const [isLoading, setIsLoading] = useState(store.isStoreLoading())
   
   const templates = useSyncExternalStore(
     store.subscribe,
@@ -18,12 +19,23 @@ export function useTemplates() {
   )
 
   // Initialize from MongoDB on mount
+  // This runs once and waits for database to load before page renders
   useEffect(() => {
+    const unsubscribe = store.subscribe(() => {
+      // Update loading state whenever store changes
+      setIsLoading(store.isStoreLoading())
+    })
+
     if (!store.isStoreInitialized()) {
       store.initializeFromDatabase().then(() => {
         setIsLoading(false)
       })
+    } else {
+      // Already initialized, make sure loading state is correct
+      setIsLoading(store.isStoreLoading())
     }
+
+    return unsubscribe
   }, [])
 
   const addTemplate = useCallback(async (file: File) => {
@@ -65,7 +77,12 @@ export function useTemplates() {
   const updatePlaceholders = useCallback(async (templateId: string, placeholders: Placeholder[]) => {
     // Clear sync status before saving
     const cleanedPlaceholders = clearSyncStatus(placeholders)
-    await store.updateTemplate(templateId, { placeholders: cleanedPlaceholders })
+    try {
+      await store.updateTemplate(templateId, { placeholders: cleanedPlaceholders })
+    } catch (error) {
+      console.error('Failed to update placeholders:', error)
+      throw error // Propagate error to caller for UI handling
+    }
   }, [])
 
   /**
@@ -106,10 +123,16 @@ export function useTemplates() {
 
   /**
    * Save placeholders with cleared sync status
+   * Waits for database confirmation before returning
    */
   const savePlaceholdersClean = useCallback(async (templateId: string, placeholders: Placeholder[]) => {
     const cleanedPlaceholders = clearSyncStatus(placeholders)
-    await store.updateTemplate(templateId, { placeholders: cleanedPlaceholders })
+    try {
+      await store.updateTemplate(templateId, { placeholders: cleanedPlaceholders })
+    } catch (error) {
+      console.error('Failed to save placeholders:', error)
+      throw error // Propagate error to caller for UI handling
+    }
   }, [])
 
   return {

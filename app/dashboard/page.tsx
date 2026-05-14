@@ -2,13 +2,25 @@
 
 import { motion } from 'framer-motion'
 import Link from 'next/link'
-import { FileText, Upload, FileOutput, ArrowRight, Plus } from 'lucide-react'
+import { FileText, Upload, FileOutput, ArrowRight, Plus, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useTemplates } from '@/hooks/use-templates'
 import { TemplateCard } from '@/components/template-card'
 
 export default function DashboardPage() {
-  const { templates } = useTemplates()
+  const { templates, isLoading } = useTemplates()
+
+  // Wait for database to load before rendering page
+  if (isLoading) {
+    return (
+      <div className="flex min-h-[60vh] items-center justify-center p-6">
+        <div className="text-center">
+          <Loader2 className="mx-auto h-8 w-8 animate-spin text-muted-foreground" />
+          <p className="mt-4 text-sm text-muted-foreground">Loading dashboard...</p>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="p-6 lg:p-8">
