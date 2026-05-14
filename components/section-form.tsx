@@ -84,7 +84,6 @@ import {
   renameSection,
   deleteSection,
   movePlaceholder,
-  autoGroupPlaceholders,
   createGroup,
   ungroupFields,
   toggleGroupExpanded,
@@ -1416,11 +1415,19 @@ export function SectionForm({
     }
   }
 
-  const handleResetToAuto = () => {
+  const handleResetToUngrouped = () => {
     saveToHistory()
-    const newSections = autoGroupPlaceholders(placeholders)
-    onSectionsChange(newSections)
-    onAutoGroupedChange(true)
+    // Reset all placeholders to a single "Ungrouped Fields" section
+    const ungroupedSection: FormSection = {
+      id: crypto.randomUUID(),
+      name: 'Ungrouped Fields',
+      placeholderIds: placeholders.map(p => p.id),
+      groups: [],
+      order: 0,
+      isExpanded: true,
+    }
+    onSectionsChange([ungroupedSection])
+    onAutoGroupedChange(false)
   }
 
   // Handle toggling field selection
@@ -1544,9 +1551,9 @@ export function SectionForm({
                 Add Section
               </DropdownMenuItem>
               <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={handleResetToAuto}>
+              <DropdownMenuItem onClick={handleResetToUngrouped}>
                 <RotateCcw className="mr-2 h-4 w-4" />
-                Reset to Auto
+                Reset to Ungrouped
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>

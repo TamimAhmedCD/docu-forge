@@ -115,7 +115,7 @@ export function useSectionStorage(templateIds: string[]): SectionStorageResult {
       const existing = prev[configKey]
       
       if (!existing) {
-        // Create new config with auto-grouped sections
+        // Create new config with ungrouped placeholders (manual organization)
         const newConfig = createDefaultSectionConfig(placeholders)
         const updated = { ...prev, [configKey]: newConfig }
         saveToDatabase(configKey, newConfig)
@@ -123,15 +123,17 @@ export function useSectionStorage(templateIds: string[]): SectionStorageResult {
       }
 
       // Sync existing sections with new placeholders
+      // New placeholders always go to "Ungrouped Fields" - never auto-grouped
       const syncedSections = syncSectionsWithPlaceholders(
         existing.sections,
         placeholders,
-        existing.isAutoGrouped
+        false // Always manual organization
       )
 
       const updatedConfig = {
         ...existing,
         sections: syncedSections,
+        isAutoGrouped: false, // Ensure manual organization
         lastModified: new Date(),
       }
 
@@ -145,6 +147,7 @@ export function useSectionStorage(templateIds: string[]): SectionStorageResult {
   }, [configKey, saveToDatabase])
 
   const resetToDefault = useCallback((placeholders: Placeholder[]) => {
+    // Reset to ungrouped state - all placeholders in "Ungrouped Fields"
     const newConfig = createDefaultSectionConfig(placeholders)
     setSectionConfigs(prev => {
       const updated = { ...prev, [configKey]: newConfig }

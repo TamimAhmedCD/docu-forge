@@ -108,28 +108,56 @@ export function autoGroupPlaceholders(placeholders: Placeholder[]): FormSection[
 
 /**
  * Create a default section config from placeholders
+ * All placeholders start in "Ungrouped Fields" - users manually organize them into sections
  */
 export function createDefaultSectionConfig(placeholders: Placeholder[]): SectionConfig {
+  // Keep all placeholders ungrouped initially
+  // Users will manually create sections and drag placeholders into them
+  const ungroupedSection: FormSection = {
+    id: crypto.randomUUID(),
+    name: 'Ungrouped Fields',
+    placeholderIds: placeholders.map(p => p.id),
+    groups: [],
+    order: 0,
+    isExpanded: true,
+  }
+  
   return {
-    sections: autoGroupPlaceholders(placeholders),
-    isAutoGrouped: true,
+    sections: [ungroupedSection],
+    isAutoGrouped: false, // Manual organization by default
     lastModified: new Date(),
   }
 }
 
 /**
  * Sync sections when placeholders change (e.g., after template update)
- * Preserves existing section structure and adds new placeholders to appropriate sections
+ * Preserves existing section structure and adds new placeholders to "Ungrouped Fields"
+ * New placeholders are NEVER automatically placed into existing sections
  */
 export function syncSectionsWithPlaceholders(
   existingSections: FormSection[],
   newPlaceholders: Placeholder[],
-  isAutoGrouped: boolean
+  _isAutoGrouped: boolean // Ignored - we always use manual organization
 ): FormSection[] {
   const newPlaceholderIds = new Set(newPlaceholders.map(p => p.id))
-  const existingPlaceholderIds = new Set(existingSections.flatMap(s => s.placeholderIds))
   
-  // Find new placeholders not in any section
+  // Collect all existing placeholder IDs (both direct and inside groups)
+  const existingPlaceholderIds = new Set<string>()
+  for (const section of existingSections) {
+    for (const id of section.placeholderIds) {
+      if (id.startsWith('group-')) {
+        const groupId = id.replace('group-', '')
+        const group = section.groups?.find(g => g.id === groupId)
+        if (group) {
+          group.placeholderIds.forEach(pid => existingPlaceholderIds.add(pid))
+        }
+      } else {
+        existingPlaceholderIds.add(id)
+      }
+    }
+  }
+  
+  // Find new placeholders not in any section or group
   const newIds = newPlaceholders
     .filter(p => !existingPlaceholderIds.has(p.id))
     .map(p => p.id)
@@ -162,48 +190,27 @@ export function syncSectionsWithPlaceholders(
     }
   })
   
+  // If no new placeholders, return the cleaned sections
   if (newIds.length === 0) {
     return updatedSections
   }
   
-  if (isAutoGrouped) {
-    // Auto-assign new placeholders to appropriate sections
-    const newPlaceholdersToGroup = newPlaceholders.filter(p => newIds.includes(p.id))
-    
-    for (const placeholder of newPlaceholdersToGroup) {
-      const sectionName = detectSection(placeholder.name)
-      const existingSection = updatedSections.find(s => s.name === sectionName)
-      
-      if (existingSection) {
-        existingSection.placeholderIds.push(placeholder.id)
-      } else {
-        // Create new section for this placeholder
-      updatedSections.push({
-        id: crypto.randomUUID(),
-        name: sectionName,
-        placeholderIds: [placeholder.id],
-        groups: [],
-        order: updatedSections.length,
-        isExpanded: false,
-      })
-      }
-    }
+  // Always add new placeholders to "Ungrouped Fields" section
+  // This prevents layout breaking and gives users full manual control
+  const ungroupedSection = updatedSections.find(s => s.name === 'Ungrouped Fields')
+  
+  if (ungroupedSection) {
+    ungroupedSection.placeholderIds.push(...newIds)
   } else {
-    // Add to "Needs Review" section for manual assignment
-    const needsReviewSection = updatedSections.find(s => s.name === 'Needs Review')
-    
-    if (needsReviewSection) {
-      needsReviewSection.placeholderIds.push(...newIds)
-    } else {
+    // Create "Ungrouped Fields" section if it doesn't exist
     updatedSections.push({
       id: crypto.randomUUID(),
-      name: 'Needs Review',
+      name: 'Ungrouped Fields',
       placeholderIds: newIds,
       groups: [],
       order: updatedSections.length,
       isExpanded: true,
     })
-    }
   }
   
   return updatedSections
