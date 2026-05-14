@@ -88,6 +88,7 @@ import {
   deleteSection,
   movePlaceholder,
   createGroup,
+  createSectionWithGroup,
   ungroupFields,
   toggleGroupExpanded,
   renameGroup,
@@ -1550,6 +1551,8 @@ export function SectionForm({
   const [selectedFields, setSelectedFields] = useState<Set<string>>(new Set())
   const [showGroupDialog, setShowGroupDialog] = useState(false)
   const [newGroupName, setNewGroupName] = useState('')
+  const [showSectionOrGroupDialog, setShowSectionOrGroupDialog] = useState(false)
+  const [pendingGroupFields, setPendingGroupFields] = useState<string[]>([])
   
   // Track custom order for unassigned fields (array of placeholder IDs)
   const [unassignedFieldOrder, setUnassignedFieldOrder] = useState<string[]>([])
@@ -2108,11 +2111,13 @@ export function SectionForm({
 
   // Handle creating a group from selected fields
   const handleCreateGroup = useCallback(() => {
-    if (selectedFields.size < 2 || !newGroupName.trim()) return
-
     const selectedFieldIds = Array.from(selectedFields)
-    
-    // Find the section containing the first selected field
+
+    // Validation
+    if (!newGroupName.trim() || selectedFieldIds.length < 2) {
+      return
+    }
+
     const firstFieldId = selectedFieldIds[0]
     let sectionId = findSectionForField(firstFieldId)
     
@@ -2121,30 +2126,11 @@ export function SectionForm({
       unassignedPlaceholders.some(p => p.id === id)
     )
     
-    // If all selected fields are unassigned, create a new section for them
+    // If all selected fields are unassigned, ask user to create section or just group
     if (unassignedFieldIds.length === selectedFieldIds.length) {
-      saveToHistory()
-      // Create new section with the group name and add all selected fields
-      const newSectionName = `${newGroupName.trim()} Section`
-      let updatedSections = addSection(sections, newSectionName)
-      const newSection = updatedSections[updatedSections.length - 1]
-      
-      // Add all selected fields to the new section
-      for (const fieldId of selectedFieldIds) {
-        updatedSections = addPlaceholderToSection(updatedSections, fieldId, newSection.id)
-      }
-      
-      // Now create the group within this new section
-      updatedSections = createGroup(updatedSections, newSection.id, selectedFieldIds, newGroupName.trim())
-      
-      onSectionsChange(updatedSections)
-      onAutoGroupedChange(false)
-      
-      // Reset state
-      setSelectedFields(new Set())
-      setIsSelectionMode(false)
+      setPendingGroupFields(selectedFieldIds)
       setShowGroupDialog(false)
-      setNewGroupName('')
+      setShowSectionOrGroupDialog(true)
       return
     }
     
@@ -2175,6 +2161,60 @@ export function SectionForm({
     setShowGroupDialog(false)
     setNewGroupName('')
   }, [selectedFields, newGroupName, sections, findSectionForField, saveToHistory, onSectionsChange, onAutoGroupedChange, unassignedPlaceholders])
+
+  // Handle creating just a group (without wrapping in section)
+  const handleCreateGroupOnly = useCallback(() => {
+    if (pendingGroupFields.length < 2) return
+    
+    // Create a temporary section to hold the group
+    let updatedSections = addSection(sections, `${newGroupName.trim()} Group`)
+    const newSection = updatedSections[updatedSections.length - 1]
+    
+    // Add all selected fields to the new section
+    for (const fieldId of pendingGroupFields) {
+      updatedSections = addPlaceholderToSection(updatedSections, fieldId, newSection.id)
+    }
+    
+    // Now create the group within this section
+    updatedSections = createGroup(updatedSections, newSection.id, pendingGroupFields, newGroupName.trim())
+    
+    saveToHistory()
+    onSectionsChange(updatedSections)
+    onAutoGroupedChange(false)
+    
+    // Reset state
+    setSelectedFields(new Set())
+    setIsSelectionMode(false)
+    setShowGroupDialog(false)
+    setShowSectionOrGroupDialog(false)
+    setNewGroupName('')
+    setPendingGroupFields([])
+  }, [pendingGroupFields, newGroupName, sections, saveToHistory, onSectionsChange, onAutoGroupedChange])
+
+  // Handle creating a section with group inside
+  const handleCreateSectionWithGroup = useCallback(() => {
+    if (!newSectionName.trim() || pendingGroupFields.length < 2) return
+    
+    saveToHistory()
+    const updatedSections = createSectionWithGroup(
+      sections,
+      pendingGroupFields,
+      newSectionName.trim(),
+      newGroupName.trim()
+    )
+    
+    onSectionsChange(updatedSections)
+    onAutoGroupedChange(false)
+    
+    // Reset state
+    setSelectedFields(new Set())
+    setIsSelectionMode(false)
+    setShowGroupDialog(false)
+    setShowSectionOrGroupDialog(false)
+    setNewGroupName('')
+    setNewSectionName('')
+    setPendingGroupFields([])
+  }, [newSectionName, newGroupName, pendingGroupFields, sections, saveToHistory, onSectionsChange, onAutoGroupedChange])
 
   // Handle toggling group expanded state
   const handleToggleGroup = useCallback((sectionId: string, groupId: string) => {
@@ -2550,6 +2590,77 @@ export function SectionForm({
             <Button onClick={handleCreateGroup} disabled={!newGroupName.trim()}>
               <Group className="mr-2 h-4 w-4" />
               Create Group
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Section or Group Choice Dialog */}
+      <Dialog open={showSectionOrGroupDialog} onOpenChange={(open) => {
+        setShowSectionOrGroupDialog(open)
+        if (!open) {
+          setNewSectionName('')
+          setPendingGroupFields([])
+        }
+      }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Organize Fields</DialogTitle>
+            <DialogDescription>
+              Would you like to create just a group, or wrap it in a new section?
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4">
+            {showSectionOrGroupDialog && (
+              <div className="space-y-3">
+                {/* Option 1: Just create group */}
+                <button
+                  onClick={handleCreateGroupOnly}
+                  className="w-full text-left p-3 rounded-lg border border-border hover:border-primary/50 hover:bg-primary/5 transition-colors"
+                >
+                  <div className="flex items-center gap-2 mb-1">
+                    <Group className="h-4 w-4 text-muted-foreground" />
+                    <span className="font-medium">Group Only</span>
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    Create a group "{newGroupName.trim()}" without a containing section
+                  </p>
+                </button>
+
+                {/* Option 2: Create section with group */}
+                <div className="border border-border rounded-lg p-3 space-y-2">
+                  <div className="flex items-center gap-2">
+                    <Settings2 className="h-4 w-4 text-muted-foreground" />
+                    <span className="font-medium">Section with Group</span>
+                  </div>
+                  <p className="text-sm text-muted-foreground mb-2">
+                    Create a new section containing the group
+                  </p>
+                  <Input
+                    placeholder="Enter section name (e.g., Contact Information)"
+                    value={newSectionName}
+                    onChange={(e) => setNewSectionName(e.target.value)}
+                    className="mb-2"
+                    autoFocus
+                  />
+                  <Button 
+                    onClick={handleCreateSectionWithGroup}
+                    disabled={!newSectionName.trim()}
+                    className="w-full"
+                  >
+                    Create Section with "{newGroupName.trim()}"
+                  </Button>
+                </div>
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => {
+              setShowSectionOrGroupDialog(false)
+              setNewSectionName('')
+              setPendingGroupFields([])
+            }}>
+              Cancel
             </Button>
           </DialogFooter>
         </DialogContent>

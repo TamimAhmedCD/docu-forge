@@ -75,13 +75,14 @@ export function detectFieldWidth(placeholder: Placeholder): FieldWidth {
 }
 
 // Static mapping for col-span classes (Tailwind requires static strings, not dynamic)
-// Maps to a 6-column grid layout
+// Maps to a 6-column grid layout with safe, tested values
+// All values are clamped between 1 and 6
 const COL_SPAN_CLASSES = {
-  1: 'col-span-6 sm:col-span-3 lg:col-span-1',
-  2: 'col-span-6 sm:col-span-3 lg:col-span-2',
-  3: 'col-span-6 sm:col-span-6 lg:col-span-3',
-  4: 'col-span-6 sm:col-span-6 lg:col-span-4',
-  5: 'col-span-6 sm:col-span-6 lg:col-span-5',
+  1: 'col-span-1',
+  2: 'col-span-2',
+  3: 'col-span-3',
+  4: 'col-span-4',
+  5: 'col-span-5',
   6: 'col-span-6',
 } as const
 
@@ -105,6 +106,7 @@ export function clampSpan(span: number): 1 | 2 | 3 | 4 | 5 | 6 {
  * Get Tailwind CSS classes for field width
  * Uses a 6-column grid for maximum flexibility
  * Uses static class mappings to ensure Tailwind compilation works correctly
+ * All spans are clamped to 1-6 range for safety
  */
 export function getFieldWidthClasses(width: FieldWidth): string {
   const span = clampSpan(WIDTH_TO_SPAN[width] || 2)
@@ -113,10 +115,19 @@ export function getFieldWidthClasses(width: FieldWidth): string {
 
 /**
  * Get field width classes from a numeric span value (1-6)
+ * Safely clamps the span value to ensure it's valid
  */
 export function getSpanClasses(span: number): string {
   const clampedSpan = clampSpan(span)
   return COL_SPAN_CLASSES[clampedSpan]
+}
+
+/**
+ * Get numeric span value from FieldWidth
+ * Returns a number between 1-6
+ */
+export function getWidthSpan(width: FieldWidth): 1 | 2 | 3 | 4 | 5 | 6 {
+  return clampSpan(WIDTH_TO_SPAN[width] || 2)
 }
 
 /**

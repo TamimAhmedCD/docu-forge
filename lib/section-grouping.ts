@@ -364,6 +364,38 @@ export function createGroup(
 }
 
 /**
+ * Create a new section with a group inside it
+ * This is used when user wants to organize placeholders into a section with a group
+ */
+export function createSectionWithGroup(
+  sections: FormSection[],
+  placeholderIds: string[],
+  sectionName: string,
+  groupName: string
+): FormSection[] {
+  const colorIndex = sections.reduce((acc, s) => acc + (s.groups?.length || 0), 0) % GROUP_COLORS.length
+  
+  const newGroup: FieldGroup = {
+    id: crypto.randomUUID(),
+    name: groupName,
+    placeholderIds: placeholderIds,
+    isExpanded: true,
+    color: GROUP_COLORS[colorIndex],
+  }
+  
+  const newSection: FormSection = {
+    id: crypto.randomUUID(),
+    name: sectionName,
+    placeholderIds: [`group-${newGroup.id}`],
+    groups: [newGroup],
+    order: sections.length,
+    isExpanded: true,
+  }
+  
+  return [...sections, newSection]
+}
+
+/**
  * Ungroup a field group (move placeholders back to section)
  */
 export function ungroupFields(
