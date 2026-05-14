@@ -446,7 +446,7 @@ function GeneratePageContent() {
                       </Button>
                     </div>
                   </div>
-                  <div className="max-h-[calc(100vh-22rem)] overflow-y-auto overflow-x-hidden p-4 custom-scrollbar">
+                  <div className="max-h-[calc(100vh-14rem)] overflow-y-auto overflow-x-hidden p-4 custom-scrollbar">
                     {/* Loading guard: Wait for section config to load from DB before rendering form */}
                     {!sectionsLoaded ? (
                       <div className="flex items-center justify-center py-12">
