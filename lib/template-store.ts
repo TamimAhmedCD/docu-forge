@@ -7,6 +7,7 @@ let templates: Template[] = []
 let generatedDocuments: GeneratedDocument[] = []
 let listeners: Set<() => void> = new Set()
 let isInitialized = false
+let isLoading = true // Start as loading - becomes false when DB initialization completes
 let initPromise: Promise<void> | null = null
 let pendingSaves: Set<string> = new Set() // Track pending saves by template ID
 
@@ -45,16 +46,26 @@ export function isSavePending(id: string): boolean {
   return pendingSaves.has(id)
 }
 
+export function isStoreLoading(): boolean {
+  return isLoading
+}
+
 // Initialize from MongoDB
+// This is the ONLY place where templates are loaded from the database
+// No default data is ever written or overwritten here
 export async function initializeFromDatabase(): Promise<void> {
   if (isInitialized) return
   if (initPromise) return initPromise
 
   initPromise = (async () => {
     try {
+      isLoading = true
+      notifyListeners() // Notify that loading started
+
       const response = await fetch('/api/templates')
       if (response.ok) {
         const data = await response.json()
+        // Load data from MongoDB - NEVER apply defaults or seed data here
         templates = data.map((t: any) => ({
           ...t,
           // Reconstruct File-like object from base64
@@ -65,12 +76,18 @@ export async function initializeFromDatabase(): Promise<void> {
           createdAt: new Date(t.createdAt),
           updatedAt: new Date(t.updatedAt),
         }))
+        console.log('[v0] Loaded templates from MongoDB:', templates.length)
         notifyListeners()
+      } else {
+        console.warn('[v0] Failed to load templates:', response.status)
       }
     } catch (error) {
-      console.error('Failed to initialize from MongoDB:', error)
+      console.error('[v0] Failed to initialize from MongoDB:', error)
+      // On error, templates remain empty - no fallback to defaults
     } finally {
       isInitialized = true
+      isLoading = false
+      notifyListeners() // Notify that loading completed
     }
   })()
 

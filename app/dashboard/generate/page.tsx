@@ -12,6 +12,7 @@ import {
   Eye,
   Menu,
   X,
+  Loader2,
 } from 'lucide-react'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
@@ -41,7 +42,7 @@ import { Trash2 } from 'lucide-react'
 function GeneratePageContent() {
   const searchParams = useSearchParams()
   const templateId = searchParams.get('template')
-  const { templates } = useTemplates()
+  const { templates, isLoading } = useTemplates()
   const [selectedTemplates, setSelectedTemplates] = useState<string[]>([])
   // Use template-scoped form storage so form data persists per template combination
   const { formData, updateFormData, clearFormData, isLoaded } = useFormStorage(
@@ -253,6 +254,18 @@ function GeneratePageContent() {
   const handleDownloadAll = () => {
     generatedDocs.forEach(doc => downloadDocument(doc))
     toast.success('Downloads started')
+  }
+
+  // Wait for database to load before rendering page
+  if (isLoading) {
+    return (
+      <div className="flex min-h-[60vh] items-center justify-center p-6">
+        <div className="text-center">
+          <Loader2 className="mx-auto h-8 w-8 animate-spin text-muted-foreground" />
+          <p className="mt-4 text-sm text-muted-foreground">Loading templates...</p>
+        </div>
+      </div>
+    )
   }
 
   return (
