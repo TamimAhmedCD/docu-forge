@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, Suspense, useMemo } from 'react'
+import { useState, useEffect, Suspense, useMemo, useRef } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
@@ -52,6 +52,7 @@ function GeneratePageContent() {
     sections,
     isAutoGrouped,
     isLoaded: sectionsLoaded,
+    hasDbData,
     setSections,
     setIsAutoGrouped,
     syncWithPlaceholders,
@@ -93,19 +94,35 @@ function GeneratePageContent() {
     setStoredWidth(id, width)
   }
 
-  // Sync sections when placeholders change
+  // Track if sections have been initialized to prevent duplicate initialization
+  const sectionsInitializedRef = useRef(false)
+  
+  // Reset initialization tracking when template selection changes
   useEffect(() => {
-    if (allPlaceholders.length > 0 && sectionsLoaded) {
-      if (sections.length === 0) {
-        // Initialize sections if none exist
-        const defaultConfig = createDefaultSectionConfig(allPlaceholders)
-        setSections(defaultConfig.sections)
-      } else {
-        // Sync existing sections with current placeholders
-        syncWithPlaceholders(allPlaceholders)
-      }
+    sectionsInitializedRef.current = false
+  }, [selectedTemplates.join('|')])
+
+  // Sync sections when placeholders change
+  // CRITICAL: Only sync AFTER DB load completes to prevent overwriting saved data
+  useEffect(() => {
+    // Wait until sections are loaded from DB
+    if (!sectionsLoaded) return
+    // Wait until we have placeholders to sync
+    if (allPlaceholders.length === 0) return
+
+    // If DB has data, it's already loaded into sections state
+    // Only initialize defaults if DB returned nothing
+    if (sections.length === 0 && !hasDbData && !sectionsInitializedRef.current) {
+      // No DB data exists - create default sections (won't be saved until user changes something)
+      const defaultConfig = createDefaultSectionConfig(allPlaceholders)
+      setSections(defaultConfig.sections)
+      sectionsInitializedRef.current = true
+    } else if (sections.length > 0 && !sectionsInitializedRef.current) {
+      // DB has data or we have sections - sync with placeholders to add any new ones
+      syncWithPlaceholders(allPlaceholders)
+      sectionsInitializedRef.current = true
     }
-  }, [allPlaceholders.length, sectionsLoaded])
+  }, [allPlaceholders, sectionsLoaded, hasDbData, sections.length, setSections, syncWithPlaceholders])
 
   // Extract document HTML when templates are selected (for preview with formatting)
   useEffect(() => {
@@ -430,16 +447,24 @@ function GeneratePageContent() {
                     </div>
                   </div>
                   <div className="max-h-[calc(100vh-22rem)] overflow-y-auto overflow-x-hidden p-4 custom-scrollbar">
-                    <SectionForm
-                      sections={sections}
-                      placeholders={allPlaceholders}
-                      formData={formData}
-                      onSectionsChange={setSections}
-                      onFormDataChange={handleInputChange}
-                      onPlaceholderWidthChange={handlePlaceholderWidthChange}
-                      isAutoGrouped={isAutoGrouped}
-                      onAutoGroupedChange={setIsAutoGrouped}
-                    />
+                    {/* Loading guard: Wait for section config to load from DB before rendering form */}
+                    {!sectionsLoaded ? (
+                      <div className="flex items-center justify-center py-12">
+                        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                        <span className="ml-2 text-sm text-muted-foreground">Loading form layout...</span>
+                      </div>
+                    ) : (
+                      <SectionForm
+                        sections={sections}
+                        placeholders={allPlaceholders}
+                        formData={formData}
+                        onSectionsChange={setSections}
+                        onFormDataChange={handleInputChange}
+                        onPlaceholderWidthChange={handlePlaceholderWidthChange}
+                        isAutoGrouped={isAutoGrouped}
+                        onAutoGroupedChange={setIsAutoGrouped}
+                      />
+                    )}
                   </div>
                   <div className="border-t border-border p-4">
                     <Button
