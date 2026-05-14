@@ -91,6 +91,8 @@ import {
   moveGroup,
   reorderSectionItems,
   getAllPlaceholderIdsInSection,
+  addPlaceholderToSection,
+  removePlaceholderFromSection,
 } from '@/lib/section-grouping'
 import {
   detectFieldWidth,
@@ -677,6 +679,194 @@ function GroupField({
   )
 }
 
+// Sortable Unassigned Field Component - allows dragging unassigned fields
+function SortableUnassignedField({
+  placeholder,
+  formData,
+  onFormDataChange,
+  isDragging,
+  isSelectionMode,
+  isSelected,
+  onToggleSelection,
+}: {
+  placeholder: Placeholder
+  formData: FormDataType
+  onFormDataChange: (id: string, value: string | number | Date) => void
+  isDragging?: boolean
+  isSelectionMode?: boolean
+  isSelected?: boolean
+  onToggleSelection?: (id: string) => void
+}) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging: isSortableDragging,
+  } = useSortable({
+    id: `unassigned-${placeholder.id}`,
+    data: {
+      type: 'placeholder' as DragItemType,
+      sectionId: 'unassigned',
+      placeholderId: placeholder.id,
+    },
+  })
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+  }
+
+  const value = formData[placeholder.id]
+  const isFilled = value !== undefined && value !== null && value !== ''
+
+  if (isSortableDragging || isDragging) {
+    return (
+      <div
+        ref={setNodeRef}
+        style={style}
+        className="rounded-lg border-2 border-dashed border-primary/50 bg-primary/5 h-24"
+      />
+    )
+  }
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className={cn(
+        'group relative rounded-md border bg-background p-3 transition-all',
+        isFilled ? 'border-primary/30 bg-primary/5' : 'border-border',
+        isSelectionMode && isSelected && 'ring-2 ring-primary border-primary'
+      )}
+    >
+      {/* Selection Checkbox */}
+      {isSelectionMode && (
+        <button
+          onClick={() => onToggleSelection?.(placeholder.id)}
+          className="absolute top-2 right-2 p-1 rounded hover:bg-muted transition-colors z-10"
+        >
+          {isSelected ? (
+            <CheckSquare className="h-4 w-4 text-primary" />
+          ) : (
+            <Square className="h-4 w-4 text-muted-foreground" />
+          )}
+        </button>
+      )}
+      
+      {/* Header with Drag Handle */}
+      <div className="flex items-center gap-2 mb-1.5">
+        <div
+          {...attributes}
+          {...listeners}
+          className={cn(
+            "cursor-grab active:cursor-grabbing p-1 -m-1 rounded hover:bg-muted transition-colors touch-none",
+            isSelectionMode && "opacity-50 pointer-events-none"
+          )}
+          style={{ touchAction: 'none' }}
+        >
+          <GripVertical className="h-4 w-4 text-muted-foreground" />
+        </div>
+        <Label htmlFor={`unassigned-${placeholder.id}`} className="text-sm font-medium flex-1 truncate">
+          {placeholder.label}
+          {placeholder.required && <span className="text-destructive ml-1">*</span>}
+        </Label>
+      </div>
+
+      {/* Input */}
+      {placeholder.type === 'textarea' ? (
+        <Textarea
+          id={`unassigned-${placeholder.id}`}
+          name={placeholder.id}
+          value={(value as string) || ''}
+          onChange={(e) => onFormDataChange(placeholder.id, e.target.value)}
+          placeholder={`Enter ${placeholder.label.toLowerCase()}`}
+          rows={2}
+          className={cn("resize-none text-sm min-h-[60px]", formInputClass)}
+          disabled={isSelectionMode}
+        />
+      ) : placeholder.type === 'select' ? (
+        <Select
+          value={(value as string) || ''}
+          onValueChange={(v) => onFormDataChange(placeholder.id, v)}
+          disabled={isSelectionMode}
+        >
+          <SelectTrigger className={cn("h-9 text-sm", formInputClass)}>
+            <SelectValue placeholder="Select..." />
+          </SelectTrigger>
+          <SelectContent>
+            {placeholder.options?.map((option) => (
+              <SelectItem key={option} value={option}>
+                {option}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      ) : (
+        <Input
+          id={`unassigned-${placeholder.id}`}
+          name={placeholder.id}
+          type={
+            placeholder.type === 'number' ? 'number' :
+            placeholder.type === 'date' ? 'date' :
+            placeholder.type === 'email' ? 'email' : 'text'
+          }
+          value={(value as string) || ''}
+          onChange={(e) => onFormDataChange(placeholder.id, e.target.value)}
+          placeholder={`Enter ${placeholder.label.toLowerCase()}`}
+          className={cn("h-9 text-sm", formInputClass)}
+          disabled={isSelectionMode}
+        />
+      )}
+    </div>
+  )
+}
+
+// Droppable area for unassigned fields section
+function DroppableUnassignedArea({ 
+  children, 
+  isEmpty
+}: { 
+  children?: React.ReactNode
+  isEmpty?: boolean
+}) {
+  const { setNodeRef, isOver } = useDroppable({
+    id: 'section-drop-unassigned',
+    data: {
+      type: 'section' as DragItemType,
+      sectionId: 'unassigned',
+    },
+  })
+
+  if (isEmpty) {
+    return (
+      <div 
+        ref={setNodeRef}
+        className={cn(
+          "text-center py-10 text-muted-foreground border-2 border-dashed rounded-lg transition-all duration-200",
+          isOver ? "border-primary bg-primary/10" : "border-border"
+        )}
+      >
+        <p>No unassigned fields</p>
+        <p className="text-sm">Drag fields here to unassign them</p>
+      </div>
+    )
+  }
+
+  return (
+    <div 
+      ref={setNodeRef}
+      className={cn(
+        "min-h-[60px] rounded-lg transition-all duration-200",
+        isOver && "ring-2 ring-primary/50 bg-primary/5"
+      )}
+    >
+      {children}
+    </div>
+  )
+}
+
 // Sortable Section Component
 function SortableSection({
   section,
@@ -1097,8 +1287,10 @@ export function SectionForm({
       return ratioB - ratioA
     })
 
-    // Find the best match with priority: placeholder > group > section-drop > section
-    const placeholder = sortedCollisions.find(c => String(c.id).startsWith('placeholder-'))
+    // Find the best match with priority: placeholder/unassigned > group > section-drop > section
+    const placeholder = sortedCollisions.find(c => 
+      String(c.id).startsWith('placeholder-') || String(c.id).startsWith('unassigned-')
+    )
     if (placeholder) return [placeholder]
     
     const group = sortedCollisions.find(c => String(c.id).startsWith('group-'))
@@ -1261,6 +1453,8 @@ export function SectionForm({
       targetSectionId = overData.sectionId
     } else if (overId.startsWith('section-') && !overId.startsWith('section-drop-')) {
       targetSectionId = overId.replace('section-', '')
+    } else if (overId.startsWith('unassigned-')) {
+      targetSectionId = 'unassigned'
     }
 
     // Handle placeholder dragging
@@ -1275,8 +1469,22 @@ export function SectionForm({
         if (active.data.current) {
           (active.data.current as DragData).sectionId = targetSectionId
         }
-        onSectionsChange(movePlaceholder(sections, placeholderId, activeSectionId, targetSectionId))
-        onAutoGroupedChange(false)
+        
+        // Handle moving from unassigned to a section
+        if (activeSectionId === 'unassigned' && targetSectionId !== 'unassigned') {
+          onSectionsChange(addPlaceholderToSection(sections, placeholderId, targetSectionId))
+          onAutoGroupedChange(false)
+        }
+        // Handle moving from a section to unassigned
+        else if (activeSectionId !== 'unassigned' && targetSectionId === 'unassigned') {
+          onSectionsChange(removePlaceholderFromSection(sections, placeholderId, activeSectionId))
+          onAutoGroupedChange(false)
+        }
+        // Handle moving between sections (neither is unassigned)
+        else if (activeSectionId !== 'unassigned' && targetSectionId !== 'unassigned') {
+          onSectionsChange(movePlaceholder(sections, placeholderId, activeSectionId, targetSectionId))
+          onAutoGroupedChange(false)
+        }
       }
     }
 
@@ -1286,8 +1494,8 @@ export function SectionForm({
       const groupId = activeData.groupId
       if (!activeSectionId || !groupId) return
 
-      // Move group to new section if different
-      if (targetSectionId && targetSectionId !== activeSectionId) {
+      // Move group to new section if different (groups cannot be unassigned)
+      if (targetSectionId && targetSectionId !== activeSectionId && targetSectionId !== 'unassigned') {
         // Update active data for subsequent events
         if (active.data.current) {
           (active.data.current as DragData).sectionId = targetSectionId
@@ -1709,87 +1917,39 @@ export function SectionForm({
                 </Badge>
               </div>
               <span className="text-xs text-muted-foreground">
-                Create a section and drag fields into it
+                Drag fields to a section or drag here to unassign
               </span>
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-              {filteredUnassignedPlaceholders.map((placeholder) => {
-                const value = formData[placeholder.id]
-                const isFilled = value !== undefined && value !== null && value !== ''
-                const isSelected = selectedFields.has(placeholder.id)
-                
-                return (
-                  <div
-                    key={placeholder.id}
-                    className={cn(
-                      "relative rounded-md border bg-background p-3 transition-all",
-                      isFilled ? "border-primary/30 bg-primary/5" : "border-border",
-                      isSelectionMode && "cursor-pointer hover:border-primary/50",
-                      isSelected && "ring-2 ring-primary border-primary"
-                    )}
-                    onClick={isSelectionMode ? () => handleToggleFieldSelection(placeholder.id) : undefined}
-                  >
-                    {isSelectionMode && (
-                      <div className="absolute top-2 right-2">
-                        {isSelected ? (
-                          <CheckSquare className="h-4 w-4 text-primary" />
-                        ) : (
-                          <Square className="h-4 w-4 text-muted-foreground" />
-                        )}
-                      </div>
-                    )}
-                    <Label htmlFor={`unassigned-${placeholder.id}`} className="text-sm font-medium mb-1.5 block">
-                      {placeholder.label}
-                      {placeholder.required && <span className="text-destructive ml-1">*</span>}
-                    </Label>
-                    {placeholder.type === 'textarea' ? (
-                      <Textarea
-                        id={`unassigned-${placeholder.id}`}
-                        name={placeholder.id}
-                        value={(value as string) || ''}
-                        onChange={(e) => onFormDataChange(placeholder.id, e.target.value)}
-                        placeholder={`Enter ${placeholder.label.toLowerCase()}`}
-                        rows={2}
-                        className={cn("resize-none text-sm min-h-[60px]", formInputClass)}
-                        disabled={isSelectionMode}
-                      />
-                    ) : placeholder.type === 'select' ? (
-                      <Select
-                        value={(value as string) || ''}
-                        onValueChange={(v) => onFormDataChange(placeholder.id, v)}
-                        disabled={isSelectionMode}
-                      >
-                        <SelectTrigger className={cn("h-9 text-sm", formInputClass)}>
-                          <SelectValue placeholder="Select..." />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {placeholder.options?.map((option) => (
-                            <SelectItem key={option} value={option}>
-                              {option}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    ) : (
-                      <Input
-                        id={`unassigned-${placeholder.id}`}
-                        name={placeholder.id}
-                        type={
-                          placeholder.type === 'number' ? 'number' :
-                          placeholder.type === 'date' ? 'date' :
-                          placeholder.type === 'email' ? 'email' : 'text'
-                        }
-                        value={(value as string) || ''}
-                        onChange={(e) => onFormDataChange(placeholder.id, e.target.value)}
-                        placeholder={`Enter ${placeholder.label.toLowerCase()}`}
-                        className={cn("h-9 text-sm", formInputClass)}
-                        disabled={isSelectionMode}
-                      />
-                    )}
-                  </div>
-                )
-              })}
-            </div>
+            <SortableContext
+              items={filteredUnassignedPlaceholders.map(p => `unassigned-${p.id}`)}
+              strategy={verticalListSortingStrategy}
+            >
+              <DroppableUnassignedArea>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                  {filteredUnassignedPlaceholders.map((placeholder) => (
+                    <SortableUnassignedField
+                      key={placeholder.id}
+                      placeholder={placeholder}
+                      formData={formData}
+                      onFormDataChange={onFormDataChange}
+                      isDragging={activeType === 'placeholder' && activeItem?.type === 'placeholder' && activeItem.placeholder?.id === placeholder.id}
+                      isSelectionMode={isSelectionMode}
+                      isSelected={selectedFields.has(placeholder.id)}
+                      onToggleSelection={handleToggleFieldSelection}
+                    />
+                  ))}
+                </div>
+              </DroppableUnassignedArea>
+            </SortableContext>
+          </div>
+        )}
+
+        {/* Empty Unassigned Drop Area - shown when there are sections but no unassigned fields */}
+        {filteredUnassignedPlaceholders.length === 0 && sections.length > 0 && (
+          <div className="mt-4">
+            <DroppableUnassignedArea isEmpty>
+              <div />
+            </DroppableUnassignedArea>
           </div>
         )}
 

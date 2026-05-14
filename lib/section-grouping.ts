@@ -496,3 +496,51 @@ export function reorderSectionItems(
     }
   })
 }
+
+/**
+ * Add an unassigned placeholder to a section
+ */
+export function addPlaceholderToSection(
+  sections: FormSection[],
+  placeholderId: string,
+  toSectionId: string,
+  targetIndex?: number
+): FormSection[] {
+  return sections.map(section => {
+    if (section.id === toSectionId) {
+      const newIds = [...section.placeholderIds]
+      // Ensure placeholder is not already in the section
+      if (!newIds.includes(placeholderId)) {
+        if (targetIndex !== undefined) {
+          newIds.splice(targetIndex, 0, placeholderId)
+        } else {
+          newIds.push(placeholderId)
+        }
+      }
+      return {
+        ...section,
+        placeholderIds: newIds,
+      }
+    }
+    return section
+  })
+}
+
+/**
+ * Remove a placeholder from a section (make it unassigned)
+ */
+export function removePlaceholderFromSection(
+  sections: FormSection[],
+  placeholderId: string,
+  fromSectionId: string
+): FormSection[] {
+  return sections.map(section => {
+    if (section.id === fromSectionId) {
+      return {
+        ...section,
+        placeholderIds: section.placeholderIds.filter(id => id !== placeholderId),
+      }
+    }
+    return section
+  })
+}
