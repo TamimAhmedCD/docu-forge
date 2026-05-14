@@ -8,6 +8,7 @@ let generatedDocuments: GeneratedDocument[] = []
 let listeners: Set<() => void> = new Set()
 let isInitialized = false
 let initPromise: Promise<void> | null = null
+let pendingSaves: Set<string> = new Set() // Track pending saves by template ID
 
 // Server snapshot for SSR - empty array with stable reference
 const emptyTemplates: Template[] = []
@@ -38,6 +39,10 @@ export function getTemplate(id: string): Template | undefined {
 
 export function isStoreInitialized(): boolean {
   return isInitialized
+}
+
+export function isSavePending(id: string): boolean {
+  return pendingSaves.has(id)
 }
 
 // Initialize from MongoDB
@@ -83,12 +88,12 @@ function arrayBufferToBase64(buffer: ArrayBuffer): string {
 }
 
 export async function addTemplate(template: Template): Promise<void> {
-  // Add to local state immediately for UI responsiveness
-  templates = [...templates, template]
+  // Mark save as pending
+  pendingSaves.add(template.id)
   notifyListeners()
 
-  // Persist to MongoDB
   try {
+    // Persist to MongoDB FIRST
     const response = await fetch('/api/templates', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -101,21 +106,39 @@ export async function addTemplate(template: Template): Promise<void> {
     })
     
     if (!response.ok) {
-      console.error('Failed to save template to MongoDB')
+      throw new Error(`Failed to save template: ${response.statusText}`)
     }
+
+    // Add to local state ONLY after DB confirms success
+    templates = [...templates, template]
+    notifyListeners()
   } catch (error) {
     console.error('Failed to save template to MongoDB:', error)
+    throw error
+  } finally {
+    pendingSaves.delete(template.id)
+    notifyListeners()
   }
 }
 
 export async function updateTemplate(id: string, updates: Partial<Template>): Promise<void> {
-  // Update local state immediately
-  templates = templates.map(t => 
-    t.id === id ? { ...t, ...updates, updatedAt: new Date() } : t
-  )
+  // Prevent concurrent saves
+  if (pendingSaves.has(id)) {
+    console.warn(`Save already in progress for template ${id}`)
+    return
+  }
+
+  // Find existing template first (for error recovery)
+  const existingTemplate = templates.find(t => t.id === id)
+  if (!existingTemplate) {
+    console.error(`Template ${id} not found`)
+    return
+  }
+
+  // Mark save as pending
+  pendingSaves.add(id)
   notifyListeners()
 
-  // Persist to MongoDB
   try {
     const updateData: Record<string, any> = {}
     if (updates.name !== undefined) updateData.name = updates.name
@@ -131,32 +154,59 @@ export async function updateTemplate(id: string, updates: Partial<Template>): Pr
     })
     
     if (!response.ok) {
-      console.error('Failed to update template in MongoDB')
+      throw new Error(`Failed to update template: ${response.statusText}`)
     }
+
+    // Update local state ONLY after DB confirms success
+    templates = templates.map(t => 
+      t.id === id ? { ...t, ...updates, updatedAt: new Date() } : t
+    )
+    notifyListeners()
   } catch (error) {
     console.error('Failed to update template in MongoDB:', error)
+    // State remains unchanged (error recovery)
+    notifyListeners()
+    throw error
+  } finally {
+    pendingSaves.delete(id)
+    notifyListeners()
   }
 }
 
 export async function removeTemplate(id: string): Promise<void> {
-  // Remove from local state immediately
-  templates = templates.filter(t => t.id !== id)
+  // Find template first (for error recovery)
+  const templateToRemove = templates.find(t => t.id === id)
+  if (!templateToRemove) {
+    console.error(`Template ${id} not found`)
+    return
+  }
+
+  // Mark delete as pending
+  pendingSaves.add(id)
   notifyListeners()
 
-  // Delete localStorage form data for this template
-  deleteTemplateFormData(id)
-
-  // Remove from MongoDB (cascade deletes section configs on server)
   try {
+    // Remove from MongoDB FIRST (cascade deletes section configs on server)
     const response = await fetch(`/api/templates/${id}`, {
       method: 'DELETE',
     })
     
     if (!response.ok) {
-      console.error('Failed to delete template from MongoDB')
+      throw new Error(`Failed to delete template: ${response.statusText}`)
     }
+
+    // Remove from local state ONLY after DB confirms success
+    templates = templates.filter(t => t.id !== id)
+    notifyListeners()
+
+    // Delete localStorage form data for this template
+    deleteTemplateFormData(id)
   } catch (error) {
     console.error('Failed to delete template from MongoDB:', error)
+    throw error
+  } finally {
+    pendingSaves.delete(id)
+    notifyListeners()
   }
 }
 

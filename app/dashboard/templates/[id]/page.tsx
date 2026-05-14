@@ -57,7 +57,7 @@ const fieldTypes: { value: FieldType; label: string }[] = [
 export default function TemplateEditorPage({ params }: { params: Promise<{ id: string }> }) {
   const resolvedParams = use(params)
   const router = useRouter()
-  const { getTemplate, updatePlaceholders, updateTemplateFile, savePlaceholdersClean } = useTemplates()
+  const { getTemplate, updatePlaceholders, updateTemplateFile, savePlaceholdersClean, isLoading: storeLoading } = useTemplates()
   const [template, setTemplate] = useState<Template | null>(null)
   const [placeholders, setPlaceholders] = useState<Placeholder[]>([])
   const [originalPlaceholders, setOriginalPlaceholders] = useState<Placeholder[]>([])
@@ -69,19 +69,27 @@ export default function TemplateEditorPage({ params }: { params: Promise<{ id: s
   const [showSyncPanel, setShowSyncPanel] = useState(false)
   const [syncResult, setSyncResult] = useState<PlaceholderSyncResult | null>(null)
   const [isUploading, setIsUploading] = useState(false)
+  const [isSaving, setIsSaving] = useState(false)
 
+  // DB-FIRST LOAD: Load from database first, wait for completion
   useEffect(() => {
+    if (storeLoading) {
+      // Store is still initializing from database
+      return
+    }
+
     const t = getTemplate(resolvedParams.id)
     if (t) {
       setTemplate(t)
-      setPlaceholders(t.placeholders)
+      // Load the latest data from the database template
+      setPlaceholders(JSON.parse(JSON.stringify(t.placeholders)))
       setOriginalPlaceholders(JSON.parse(JSON.stringify(t.placeholders)))
       // Extract document text for preview
       mammoth.extractRawText({ arrayBuffer: t.fileContent }).then((result) => {
         setDocumentText(result.value)
       })
     }
-  }, [resolvedParams.id, getTemplate])
+  }, [resolvedParams.id, getTemplate, storeLoading])
 
   // Check if there are unsaved changes
   const hasUnsavedChanges = useCallback(() => {
@@ -191,35 +199,50 @@ export default function TemplateEditorPage({ params }: { params: Promise<{ id: s
     }
   }
 
-  const handleSave = () => {
-    if (!template) return
-    savePlaceholdersClean(template.id, placeholders)
-    setOriginalPlaceholders(JSON.parse(JSON.stringify(placeholders)))
-    // Clear sync status after saving
-    setPlaceholders(prev => prev.map(p => ({ ...p, syncStatus: undefined })))
-    setRemovedPlaceholders([])
-    setSyncResult(null)
-    setShowSyncPanel(false)
-    toast.success('Template saved')
+  const handleSave = async () => {
+    if (!template || isSaving) return
+    
+    setIsSaving(true)
+    try {
+      await savePlaceholdersClean(template.id, placeholders)
+      setOriginalPlaceholders(JSON.parse(JSON.stringify(placeholders)))
+      // Clear sync status after saving
+      setPlaceholders(prev => prev.map(p => ({ ...p, syncStatus: undefined })))
+      setRemovedPlaceholders([])
+      setSyncResult(null)
+      setShowSyncPanel(false)
+      toast.success('Template saved successfully')
+    } catch (error) {
+      console.error('[v0] Save failed:', error)
+      toast.error('Failed to save template')
+      // State remains unchanged - user can retry
+    } finally {
+      setIsSaving(false)
+    }
   }
 
-  if (!template) {
+  // HYDRATION SAFETY: Wait for database to load before rendering editor
+  if (storeLoading || !template) {
     return (
       <div className="flex min-h-[50vh] items-center justify-center">
         <div className="text-center">
-          <div className="flex h-16 w-16 mx-auto items-center justify-center rounded-full bg-muted">
+          <div className="flex h-16 w-16 mx-auto items-center justify-center rounded-full bg-muted animate-pulse">
             <FileText className="h-8 w-8 text-muted-foreground" />
           </div>
-          <h3 className="mt-4 text-lg font-semibold text-foreground">Template not found</h3>
+          <h3 className="mt-4 text-lg font-semibold text-foreground">
+            {storeLoading ? 'Loading template...' : 'Template not found'}
+          </h3>
           <p className="mt-1 text-sm text-muted-foreground">
-            This template may have been deleted
+            {storeLoading ? 'Fetching data from database' : 'This template may have been deleted'}
           </p>
-          <Link href="/dashboard/templates" className="mt-6 inline-block">
-            <Button>
-              <ArrowLeft className="mr-2 h-4 w-4" />
-              Back to Templates
-            </Button>
-          </Link>
+          {!storeLoading && (
+            <Link href="/dashboard/templates" className="mt-6 inline-block">
+              <Button>
+                <ArrowLeft className="mr-2 h-4 w-4" />
+                Back to Templates
+              </Button>
+            </Link>
+          )}
         </div>
       </div>
     )
@@ -288,9 +311,9 @@ export default function TemplateEditorPage({ params }: { params: Promise<{ id: s
               Sync Status
             </Button>
           )}
-          <Button onClick={handleSave}>
+          <Button onClick={handleSave} disabled={isSaving || storeLoading || !hasUnsavedChanges()}>
             <Save className="mr-2 h-4 w-4" />
-            Save
+            {isSaving ? 'Saving...' : 'Save'}
           </Button>
         </div>
       </div>

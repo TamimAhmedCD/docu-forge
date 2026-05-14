@@ -65,7 +65,12 @@ export function useTemplates() {
   const updatePlaceholders = useCallback(async (templateId: string, placeholders: Placeholder[]) => {
     // Clear sync status before saving
     const cleanedPlaceholders = clearSyncStatus(placeholders)
-    await store.updateTemplate(templateId, { placeholders: cleanedPlaceholders })
+    try {
+      await store.updateTemplate(templateId, { placeholders: cleanedPlaceholders })
+    } catch (error) {
+      console.error('Failed to update placeholders:', error)
+      throw error // Propagate error to caller for UI handling
+    }
   }, [])
 
   /**
@@ -106,10 +111,16 @@ export function useTemplates() {
 
   /**
    * Save placeholders with cleared sync status
+   * Waits for database confirmation before returning
    */
   const savePlaceholdersClean = useCallback(async (templateId: string, placeholders: Placeholder[]) => {
     const cleanedPlaceholders = clearSyncStatus(placeholders)
-    await store.updateTemplate(templateId, { placeholders: cleanedPlaceholders })
+    try {
+      await store.updateTemplate(templateId, { placeholders: cleanedPlaceholders })
+    } catch (error) {
+      console.error('Failed to save placeholders:', error)
+      throw error // Propagate error to caller for UI handling
+    }
   }, [])
 
   return {
