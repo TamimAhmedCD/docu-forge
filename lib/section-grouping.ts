@@ -233,6 +233,48 @@ export function addSection(sections: FormSection[], name: string): FormSection[]
 }
 
 /**
+ * Create a new section with specific placeholder fields (not grouped)
+ * Removes the placeholders from their current sections and adds them to the new section
+ */
+export function createSectionWithFields(
+  sections: FormSection[],
+  placeholderIds: string[],
+  sectionName: string
+): FormSection[] {
+  // Remove placeholders from all existing sections and groups
+  let updatedSections = sections.map(section => {
+    // Remove from section's direct placeholders
+    const filteredPlaceholderIds = section.placeholderIds.filter(
+      id => !placeholderIds.includes(id)
+    )
+    
+    // Remove from groups within the section
+    const updatedGroups = section.groups.map(group => ({
+      ...group,
+      placeholderIds: group.placeholderIds.filter(id => !placeholderIds.includes(id))
+    })).filter(group => group.placeholderIds.length > 0) // Remove empty groups
+    
+    return {
+      ...section,
+      placeholderIds: filteredPlaceholderIds,
+      groups: updatedGroups,
+    }
+  })
+  
+  // Create the new section with the placeholders
+  const newSection: FormSection = {
+    id: crypto.randomUUID(),
+    name: sectionName,
+    placeholderIds: placeholderIds,
+    groups: [],
+    order: updatedSections.length,
+    isExpanded: true,
+  }
+  
+  return [...updatedSections, newSection]
+}
+
+/**
  * Rename a section
  */
 export function renameSection(sections: FormSection[], sectionId: string, newName: string): FormSection[] {
