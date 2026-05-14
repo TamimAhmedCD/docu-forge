@@ -247,11 +247,14 @@ function SortableField({
 
   if (isSortableDragging || isDragging) {
     return (
-      <div
+      <motion.div
         ref={setNodeRef}
         style={style}
+        initial={{ scale: 1, opacity: 0.8 }}
+        animate={{ scale: 0.98, opacity: 0.6 }}
+        transition={{ duration: 0.2 }}
         className={cn(
-          'rounded-lg border-2 border-dashed border-primary/50 bg-primary/5 h-16 animate-pulse transition-all duration-300',
+          'rounded-lg border-2 border-dashed border-primary/50 bg-primary/10 h-16',
           getFieldWidthClasses(fieldWidth)
         )}
       />
@@ -259,11 +262,13 @@ function SortableField({
   }
 
   return (
-    <div
+    <motion.div
       ref={setNodeRef}
       style={style}
+      layout
+      transition={{ type: 'spring', stiffness: 300, damping: 30 }}
       className={cn(
-        'group relative rounded-lg border border-border bg-card p-3 transition-all hover:border-muted-foreground/30',
+        'group relative rounded-lg border border-border bg-card p-3 transition-colors hover:border-muted-foreground/30',
         isFilled && 'border-primary/30 bg-primary/5',
         isSelectionMode && isSelected && 'ring-2 ring-primary border-primary',
         getFieldWidthClasses(fieldWidth)
@@ -380,7 +385,7 @@ function SortableField({
           className={cn("h-9 text-sm", formInputClass)}
         />
       )}
-    </div>
+    </motion.div>
   )
 }
 
@@ -449,22 +454,27 @@ function SortableGroup({
 
   if (isSortableDragging || externalIsDragging) {
     return (
-      <div
+      <motion.div
         ref={setNodeRef}
         style={style}
+        initial={{ scale: 1, opacity: 0.8 }}
+        animate={{ scale: 0.98, opacity: 0.6 }}
+        transition={{ duration: 0.2 }}
         className={cn(
-          'col-span-6 rounded-lg border-2 border-dashed border-primary/50 bg-primary/5 h-20 animate-pulse transition-all duration-300'
+          'col-span-6 rounded-lg border-2 border-dashed border-primary/50 bg-primary/10 h-20'
         )}
       />
     )
   }
 
   return (
-    <div
+    <motion.div
       ref={setNodeRef}
       style={style}
+      layout
+      transition={{ type: 'spring', stiffness: 300, damping: 30 }}
       className={cn(
-        'col-span-6 rounded-lg border-2 transition-all',
+        'col-span-6 rounded-lg border-2 transition-colors',
         group.color || 'bg-muted/30 border-border'
       )}
     >
@@ -590,7 +600,7 @@ function SortableGroup({
           </motion.div>
         )}
       </AnimatePresence>
-    </div>
+    </motion.div>
   )
 }
 
@@ -690,11 +700,11 @@ function GroupField({
           placeholder={`Enter ${placeholder.label.toLowerCase()}`}
           className={cn("h-9 text-sm", formInputClass)}
         />
-      )}
-    </div>
+  )}
+  </motion.div>
   )
-}
-
+  }
+  
 // Sortable Unassigned Field Component - allows dragging unassigned fields
 function SortableUnassignedField({
   placeholder,
@@ -729,8 +739,10 @@ function SortableUnassignedField({
     },
   })
 
+  // Only apply transform when actively dragging this item, not when others move around it
+  // This prevents confusing visual reordering within unassigned area
   const style = {
-    transform: CSS.Transform.toString(transform),
+    transform: isSortableDragging ? CSS.Transform.toString(transform) : undefined,
     transition: transition || 'transform 250ms cubic-bezier(0.25, 0.1, 0.25, 1)',
   }
 
@@ -739,20 +751,24 @@ function SortableUnassignedField({
 
   if (isSortableDragging || isDragging) {
     return (
-      <div
+      <motion.div
         ref={setNodeRef}
         style={style}
-        className="rounded-lg border-2 border-dashed border-primary/50 bg-primary/5 h-24 animate-pulse"
+        initial={{ scale: 1, opacity: 0.8 }}
+        animate={{ scale: 0.98, opacity: 0.6 }}
+        className="rounded-lg border-2 border-dashed border-primary/50 bg-primary/10 h-24"
       />
     )
   }
 
   return (
-    <div
+    <motion.div
       ref={setNodeRef}
       style={style}
+      layout
+      transition={{ type: 'spring', stiffness: 300, damping: 30 }}
       className={cn(
-        'group relative rounded-md border bg-background p-3 transition-all',
+        'group relative rounded-md border bg-background p-3 transition-colors',
         isFilled ? 'border-primary/30 bg-primary/5' : 'border-border',
         isSelectionMode && isSelected && 'ring-2 ring-primary border-primary'
       )}
@@ -834,11 +850,11 @@ function SortableUnassignedField({
           className={cn("h-9 text-sm", formInputClass)}
           disabled={isSelectionMode}
         />
-      )}
-    </div>
+  )}
+  </motion.div>
   )
-}
-
+  }
+  
 // Droppable area for unassigned fields section
 function DroppableUnassignedArea({ 
   children, 
@@ -976,18 +992,23 @@ function SortableSection({
 
   if (isDragging && !isDragOverlay) {
     return (
-      <div
+      <motion.div
         ref={setNodeRef}
         style={style}
-        className="rounded-xl border-2 border-dashed border-primary/50 bg-primary/5 h-20 animate-pulse transition-all duration-300"
+        initial={{ scale: 1, opacity: 0.8 }}
+        animate={{ scale: 0.98, opacity: 0.6 }}
+        transition={{ duration: 0.2 }}
+        className="rounded-xl border-2 border-dashed border-primary/50 bg-primary/10 h-20"
       />
     )
   }
 
   return (
-    <div
+    <motion.div
       ref={setNodeRef}
       style={style}
+      layout
+      transition={{ type: 'spring', stiffness: 300, damping: 30 }}
       className={cn(
         'rounded-xl border border-border bg-card overflow-hidden',
         isDragOverlay && 'shadow-2xl ring-2 ring-primary/50'
@@ -1137,11 +1158,11 @@ function SortableSection({
           // Collapsed section still needs a droppable area
           <DroppableSectionArea sectionId={section.id} collapsed={true} />
         )}
-      </AnimatePresence>
-    </div>
+  </AnimatePresence>
+  </motion.div>
   )
-}
-
+  }
+  
 // Field Drag Overlay Component
 function FieldDragOverlay({ placeholder, formData }: { placeholder: Placeholder; formData: FormDataType }) {
   const value = formData[placeholder.id]
@@ -1579,6 +1600,37 @@ export function SectionForm({
     if (activeData.type === 'placeholder') {
       const activePlaceholderId = activeData.placeholderId
       if (!activePlaceholderId) return
+      
+      // Skip if dragging within unassigned area (no reordering needed for unassigned)
+      if (activeData.sectionId === 'unassigned') {
+        // Check if we're dropping onto a section
+        const overId = String(over.id)
+        let targetSectionId: string | undefined
+        
+        if (overData?.sectionId && overData.sectionId !== 'unassigned') {
+          targetSectionId = overData.sectionId
+        } else if (overId.startsWith('section-drop-')) {
+          targetSectionId = overId.replace('section-drop-', '')
+        } else if (overId.startsWith('section-') && !overId.startsWith('section-drop-')) {
+          targetSectionId = overId.replace('section-', '')
+        }
+        
+        // If dropping on a section, add the placeholder to that section
+        if (targetSectionId && targetSectionId !== 'unassigned') {
+          // Find target index if dropping on a specific placeholder
+          let targetIndex: number | undefined
+          if (overData?.type === 'placeholder' && overData.placeholderId) {
+            const targetSection = sections.find(s => s.id === targetSectionId)
+            if (targetSection) {
+              targetIndex = targetSection.placeholderIds.indexOf(overData.placeholderId)
+            }
+          }
+          
+          onSectionsChange(addPlaceholderToSection(sections, activePlaceholderId, targetSectionId, targetIndex))
+          onAutoGroupedChange(false)
+        }
+        return
+      }
       
       const sectionIndex = sections.findIndex(s => s.id === activeData.sectionId)
       if (sectionIndex === -1) return
