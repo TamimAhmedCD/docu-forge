@@ -98,6 +98,7 @@ import {
   getFieldWidthClasses,
   WIDTH_OPTIONS,
 } from '@/lib/field-width'
+import { useFormNavigation, formInputClass } from '@/hooks/use-form-navigation'
 
 interface SectionFormProps {
   sections: FormSection[]
@@ -324,18 +325,19 @@ function SortableField({
       {placeholder.type === 'textarea' ? (
         <Textarea
           id={placeholder.id}
+          name={placeholder.id}
           value={(value as string) || ''}
           onChange={(e) => onFormDataChange(placeholder.id, e.target.value)}
           placeholder={`Enter ${placeholder.label.toLowerCase()}`}
           rows={2}
-          className="resize-none text-sm min-h-[60px]"
+          className={cn("resize-none text-sm min-h-[60px]", formInputClass)}
         />
       ) : placeholder.type === 'select' ? (
         <Select
           value={(value as string) || ''}
           onValueChange={(v) => onFormDataChange(placeholder.id, v)}
         >
-          <SelectTrigger className="h-9 text-sm">
+          <SelectTrigger className={cn("h-9 text-sm", formInputClass)}>
             <SelectValue placeholder={`Select...`} />
           </SelectTrigger>
           <SelectContent>
@@ -349,6 +351,7 @@ function SortableField({
       ) : (
         <Input
           id={placeholder.id}
+          name={placeholder.id}
           type={
             placeholder.type === 'number' ? 'number' :
             placeholder.type === 'date' ? 'date' :
@@ -357,7 +360,7 @@ function SortableField({
           value={(value as string) || ''}
           onChange={(e) => onFormDataChange(placeholder.id, e.target.value)}
           placeholder={`Enter ${placeholder.label.toLowerCase()}`}
-          className="h-9 text-sm"
+          className={cn("h-9 text-sm", formInputClass)}
         />
       )}
     </div>
@@ -633,18 +636,19 @@ function GroupField({
       {placeholder.type === 'textarea' ? (
         <Textarea
           id={placeholder.id}
+          name={placeholder.id}
           value={(value as string) || ''}
           onChange={(e) => onFormDataChange(placeholder.id, e.target.value)}
           placeholder={`Enter ${placeholder.label.toLowerCase()}`}
           rows={2}
-          className="resize-none text-sm min-h-[60px]"
+          className={cn("resize-none text-sm min-h-[60px]", formInputClass)}
         />
       ) : placeholder.type === 'select' ? (
         <Select
           value={(value as string) || ''}
           onValueChange={(v) => onFormDataChange(placeholder.id, v)}
         >
-          <SelectTrigger className="h-9 text-sm">
+          <SelectTrigger className={cn("h-9 text-sm", formInputClass)}>
             <SelectValue placeholder={`Select...`} />
           </SelectTrigger>
           <SelectContent>
@@ -658,6 +662,7 @@ function GroupField({
       ) : (
         <Input
           id={placeholder.id}
+          name={placeholder.id}
           type={
             placeholder.type === 'number' ? 'number' :
             placeholder.type === 'date' ? 'date' :
@@ -666,7 +671,7 @@ function GroupField({
           value={(value as string) || ''}
           onChange={(e) => onFormDataChange(placeholder.id, e.target.value)}
           placeholder={`Enter ${placeholder.label.toLowerCase()}`}
-          className="h-9 text-sm"
+          className={cn("h-9 text-sm", formInputClass)}
         />
       )}
     </div>
@@ -1029,6 +1034,10 @@ export function SectionForm({
   const [activeType, setActiveType] = useState<DragItemType | null>(null)
   const [history, setHistory] = useState<FormSection[][]>([])
   const containerRef = useRef<HTMLDivElement>(null)
+  const formContainerRef = useRef<HTMLDivElement>(null)
+  
+  // Form keyboard navigation
+  const { focusFirstInput, getCurrentFieldIndex } = useFormNavigation(formContainerRef)
   
   // Selection mode state for grouping
   const [isSelectionMode, setIsSelectionMode] = useState(false)
@@ -1606,6 +1615,7 @@ export function SectionForm({
       </div>
 
       {/* Sections with DnD */}
+      <div ref={formContainerRef}>
       <DndContext
         sensors={sensors}
         collisionDetection={customCollisionDetection}
@@ -1676,6 +1686,7 @@ export function SectionForm({
           )}
         </DragOverlay>
       </DndContext>
+      </div>
 
       {/* Add Section Dialog */}
       <Dialog open={showAddSection} onOpenChange={setShowAddSection}>

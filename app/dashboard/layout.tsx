@@ -1,136 +1,83 @@
 'use client'
 
-import { useState } from 'react'
-import Link from 'next/link'
-import { usePathname } from 'next/navigation'
-import { AnimatePresence, motion } from 'framer-motion'
-import {
-  FileText,
-  LayoutDashboard,
-  Upload,
-  FileOutput,
-  Menu,
-  X,
-  ChevronRight,
-} from 'lucide-react'
+import { Menu, Bell, Search, User } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Sidebar, SidebarProvider, useSidebar } from '@/components/sidebar'
 import { cn } from '@/lib/utils'
 
-const navigation = [
-  { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
-  { name: 'Templates', href: '/dashboard/templates', icon: FileText },
-  { name: 'Upload', href: '/dashboard/upload', icon: Upload },
-  { name: 'Generate', href: '/dashboard/generate', icon: FileOutput },
-]
+function DashboardContent({ children }: { children: React.ReactNode }) {
+  const { isCollapsed, setIsMobileOpen } = useSidebar()
+
+  return (
+    <div className="flex h-screen overflow-hidden bg-background">
+      {/* Sidebar - fixed, doesn't scroll */}
+      <Sidebar />
+
+      {/* Main content area */}
+      <div className="flex flex-1 flex-col overflow-hidden">
+        {/* Top header bar */}
+        <header className="flex h-14 shrink-0 items-center gap-4 border-b border-border bg-background/80 px-4 backdrop-blur-sm lg:px-6">
+          {/* Mobile menu button */}
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => setIsMobileOpen(true)}
+            className="shrink-0 lg:hidden"
+          >
+            <Menu className="h-5 w-5" />
+            <span className="sr-only">Open menu</span>
+          </Button>
+
+          {/* Search bar */}
+          <div className="relative flex-1 max-w-md">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              type="search"
+              placeholder="Search templates, documents..."
+              className="h-9 w-full bg-muted/50 pl-9 pr-4 text-sm border-transparent focus:border-border focus:bg-background"
+              tabIndex={-1}
+            />
+          </div>
+
+          {/* Right side actions */}
+          <div className="flex items-center gap-2">
+            <Button variant="ghost" size="icon" className="relative" tabIndex={-1}>
+              <Bell className="h-4 w-4 text-muted-foreground" />
+              <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-primary" />
+              <span className="sr-only">Notifications</span>
+            </Button>
+            <Button variant="ghost" size="icon" className="rounded-full" tabIndex={-1}>
+              <div className="flex h-7 w-7 items-center justify-center rounded-full bg-gradient-to-br from-primary/80 to-primary">
+                <User className="h-3.5 w-3.5 text-primary-foreground" />
+              </div>
+              <span className="sr-only">User menu</span>
+            </Button>
+          </div>
+        </header>
+
+        {/* Page content - scrollable */}
+        <main className={cn(
+          'flex-1 overflow-y-auto custom-scrollbar',
+          'transition-[margin] duration-200'
+        )}>
+          <div className="animate-in-fast">
+            {children}
+          </div>
+        </main>
+      </div>
+    </div>
+  )
+}
 
 export default function DashboardLayout({
   children,
 }: {
   children: React.ReactNode
 }) {
-  const [sidebarOpen, setSidebarOpen] = useState(true) // Mobile sidebar toggle
-  const pathname = usePathname()
-
   return (
-    <div className="flex min-h-screen bg-background">
-      {/* Mobile sidebar backdrop */}
-      <AnimatePresence>
-        {sidebarOpen && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            onClick={() => setSidebarOpen(false)}
-            className="fixed inset-0 z-40 bg-black/50 lg:hidden"
-          />
-        )}
-      </AnimatePresence>
-
-      {/* Sidebar - Fixed width and height */}
-      <aside
-        className={cn(
-          'fixed inset-y-0 left-0 z-50 w-64 flex flex-col border-r border-sidebar-border bg-sidebar transition-transform duration-300 lg:static lg:translate-x-0 lg:h-screen',
-          sidebarOpen ? 'translate-x-0' : '-translate-x-full'
-        )}
-      >
-        {/* Logo */}
-        <div className="flex h-16 flex-shrink-0 items-center justify-between border-b border-sidebar-border px-4">
-          <Link href="/" className="flex items-center gap-2">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-sidebar-primary">
-              <FileText className="h-4 w-4 text-sidebar-primary-foreground" />
-            </div>
-            <span className="text-lg font-semibold text-sidebar-foreground">DocuForge</span>
-          </Link>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => setSidebarOpen(false)}
-            className="text-sidebar-foreground lg:hidden"
-          >
-            <X className="h-5 w-5" />
-          </Button>
-        </div>
-
-        {/* Navigation - Scrollable */}
-        <nav className="flex-1 space-y-1 overflow-y-auto p-4">
-          {navigation.map((item) => {
-            const isActive = pathname === item.href
-            return (
-              <Link
-                key={item.name}
-                href={item.href}
-                onClick={() => setSidebarOpen(false)}
-                className={cn(
-                  'flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors',
-                  isActive
-                    ? 'bg-sidebar-accent text-sidebar-accent-foreground'
-                    : 'text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground'
-                )}
-              >
-                <item.icon className="h-4 w-4" />
-                {item.name}
-                {isActive && (
-                  <ChevronRight className="ml-auto h-4 w-4" />
-                )}
-              </Link>
-            )
-          })}
-        </nav>
-
-        {/* Bottom section - Fixed */}
-        <div className="flex-shrink-0 border-t border-sidebar-border p-4">
-          <div className="rounded-lg bg-sidebar-accent/50 p-4">
-            <p className="text-xs text-sidebar-foreground/70">
-              All processing happens locally in your browser. No data is sent to any server.
-            </p>
-          </div>
-        </div>
-      </aside>
-
-      {/* Main content */}
-      <div className="flex flex-1 flex-col">
-        {/* Mobile header */}
-        <header className="sticky top-0 z-30 flex h-16 items-center gap-4 border-b border-border bg-background/95 px-4 backdrop-blur supports-[backdrop-filter]:bg-background/60 lg:hidden">
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => setSidebarOpen(true)}
-          >
-            <Menu className="h-5 w-5" />
-          </Button>
-          <div className="flex items-center gap-2">
-            <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-primary">
-              <FileText className="h-3.5 w-3.5 text-primary-foreground" />
-            </div>
-            <span className="font-semibold text-foreground">DocuForge</span>
-          </div>
-        </header>
-
-        {/* Page content */}
-        <main className="flex-1">
-          {children}
-        </main>
-      </div>
-    </div>
+    <SidebarProvider>
+      <DashboardContent>{children}</DashboardContent>
+    </SidebarProvider>
   )
 }
