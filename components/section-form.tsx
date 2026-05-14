@@ -18,6 +18,8 @@ import {
   MeasuringStrategy,
   useDroppable,
   CollisionDetection,
+  type DropAnimation,
+  defaultDropAnimationSideEffects,
 } from '@dnd-kit/core'
 import {
   arrayMove,
@@ -110,6 +112,19 @@ interface SectionFormProps {
   onPlaceholderWidthChange?: (id: string, width: FieldWidth) => void
   isAutoGrouped: boolean
   onAutoGroupedChange: (value: boolean) => void
+}
+
+// Smooth drop animation configuration
+const dropAnimationConfig: DropAnimation = {
+  sideEffects: defaultDropAnimationSideEffects({
+    styles: {
+      active: {
+        opacity: '0.5',
+      },
+    },
+  }),
+  duration: 250,
+  easing: 'cubic-bezier(0.25, 0.1, 0.25, 1)',
 }
 
 // Types for drag items
@@ -222,7 +237,7 @@ function SortableField({
 
   const style = {
     transform: CSS.Transform.toString(transform),
-    transition,
+    transition: transition || 'transform 250ms cubic-bezier(0.25, 0.1, 0.25, 1)',
   }
 
   const value = formData[placeholder.id]
@@ -235,7 +250,7 @@ function SortableField({
         ref={setNodeRef}
         style={style}
         className={cn(
-          'rounded-lg border-2 border-dashed border-primary/50 bg-primary/5 h-16',
+          'rounded-lg border-2 border-dashed border-primary/50 bg-primary/5 h-16 animate-pulse transition-all duration-300',
           getFieldWidthClasses(fieldWidth)
         )}
       />
@@ -419,7 +434,7 @@ function SortableGroup({
 
   const style = {
     transform: CSS.Transform.toString(transform),
-    transition,
+    transition: transition || 'transform 250ms cubic-bezier(0.25, 0.1, 0.25, 1)',
   }
 
   const groupPlaceholders = group.placeholderIds
@@ -437,7 +452,7 @@ function SortableGroup({
         ref={setNodeRef}
         style={style}
         className={cn(
-          'col-span-6 rounded-lg border-2 border-dashed border-primary/50 bg-primary/5 h-20'
+          'col-span-6 rounded-lg border-2 border-dashed border-primary/50 bg-primary/5 h-20 animate-pulse transition-all duration-300'
         )}
       />
     )
@@ -715,7 +730,7 @@ function SortableUnassignedField({
 
   const style = {
     transform: CSS.Transform.toString(transform),
-    transition,
+    transition: transition || 'transform 250ms cubic-bezier(0.25, 0.1, 0.25, 1)',
   }
 
   const value = formData[placeholder.id]
@@ -726,7 +741,7 @@ function SortableUnassignedField({
       <div
         ref={setNodeRef}
         style={style}
-        className="rounded-lg border-2 border-dashed border-primary/50 bg-primary/5 h-24"
+        className="rounded-lg border-2 border-dashed border-primary/50 bg-primary/5 h-24 animate-pulse"
       />
     )
   }
@@ -932,7 +947,7 @@ function SortableSection({
 
   const style = {
     transform: CSS.Transform.toString(transform),
-    transition,
+    transition: transition || 'transform 250ms cubic-bezier(0.25, 0.1, 0.25, 1)',
   }
 
   const progress = getSectionProgress(section, placeholders, formData)
@@ -959,7 +974,7 @@ function SortableSection({
       <div
         ref={setNodeRef}
         style={style}
-        className="rounded-xl border-2 border-dashed border-primary/50 bg-primary/5 h-20"
+        className="rounded-xl border-2 border-dashed border-primary/50 bg-primary/5 h-20 animate-pulse transition-all duration-300"
       />
     )
   }
@@ -1128,14 +1143,17 @@ function FieldDragOverlay({ placeholder, formData }: { placeholder: Placeholder;
   const isFilled = value !== undefined && value !== null && value !== ''
 
   return (
-    <div
+    <motion.div
+      initial={{ scale: 1.02, rotate: 1, boxShadow: '0 10px 40px rgba(0,0,0,0.15)' }}
+      animate={{ scale: 1.05, rotate: 2, boxShadow: '0 20px 50px rgba(0,0,0,0.2)' }}
+      transition={{ type: 'spring', stiffness: 300, damping: 25 }}
       className={cn(
-        'rounded-lg border-2 border-primary bg-card p-4 shadow-2xl w-full max-w-md',
+        'rounded-lg border-2 border-primary bg-card p-4 w-full max-w-md cursor-grabbing',
         isFilled && 'border-primary bg-primary/5'
       )}
     >
       <div className="flex items-center gap-2">
-        <GripVertical className="h-4 w-4 text-primary" />
+        <GripVertical className="h-4 w-4 text-primary animate-pulse" />
         <Label className="flex items-center gap-2">
           {placeholder.label}
           {placeholder.required && (
@@ -1143,7 +1161,7 @@ function FieldDragOverlay({ placeholder, formData }: { placeholder: Placeholder;
           )}
         </Label>
       </div>
-    </div>
+    </motion.div>
   )
 }
 
@@ -1156,9 +1174,14 @@ function SectionDragOverlay({ section, placeholders, formData }: {
   const progress = getSectionProgress(section, placeholders, formData)
 
   return (
-    <div className="rounded-xl border-2 border-primary bg-card shadow-2xl overflow-hidden w-full max-w-2xl">
+    <motion.div
+      initial={{ scale: 1.01, rotate: 0.5, boxShadow: '0 15px 50px rgba(0,0,0,0.15)' }}
+      animate={{ scale: 1.03, rotate: 1, boxShadow: '0 25px 60px rgba(0,0,0,0.25)' }}
+      transition={{ type: 'spring', stiffness: 250, damping: 25 }}
+      className="rounded-xl border-2 border-primary bg-card overflow-hidden w-full max-w-2xl cursor-grabbing"
+    >
       <div className="flex items-center gap-3 p-4">
-        <GripVertical className="h-5 w-5 text-primary" />
+        <GripVertical className="h-5 w-5 text-primary animate-pulse" />
         <ChevronRight className="h-5 w-5 text-muted-foreground shrink-0" />
         <div className="flex-1 min-w-0">
           <h3 className="font-semibold text-foreground truncate">{section.name}</h3>
@@ -1167,7 +1190,7 @@ function SectionDragOverlay({ section, placeholders, formData }: {
           </p>
         </div>
       </div>
-    </div>
+    </motion.div>
   )
 }
 
@@ -1187,19 +1210,24 @@ function GroupDragOverlay({ group, placeholders, formData }: {
   }).length
 
   return (
-    <div className={cn(
-      "rounded-lg border-2 border-primary bg-card shadow-2xl w-full max-w-md p-3",
-      group.color
-    )}>
+    <motion.div 
+      initial={{ scale: 1.02, rotate: 1, boxShadow: '0 10px 40px rgba(0,0,0,0.15)' }}
+      animate={{ scale: 1.05, rotate: 1.5, boxShadow: '0 20px 50px rgba(0,0,0,0.2)' }}
+      transition={{ type: 'spring', stiffness: 300, damping: 25 }}
+      className={cn(
+        "rounded-lg border-2 border-primary bg-card w-full max-w-md p-3 cursor-grabbing",
+        group.color
+      )}
+    >
       <div className="flex items-center gap-2">
-        <GripVertical className="h-4 w-4 text-primary" />
+        <GripVertical className="h-4 w-4 text-primary animate-pulse" />
         <Group className="h-4 w-4 text-muted-foreground" />
         <span className="font-medium">{group.name}</span>
         <Badge variant="secondary" className="text-xs ml-auto">
           {filledCount}/{groupPlaceholders.length}
         </Badge>
       </div>
-    </div>
+    </motion.div>
   )
 }
 
@@ -1953,7 +1981,7 @@ export function SectionForm({
           </div>
         )}
 
-        <DragOverlay dropAnimation={null} modifiers={[restrictToWindowEdges]}>
+        <DragOverlay dropAnimation={dropAnimationConfig} modifiers={[restrictToWindowEdges]}>
           {activeItem?.type === 'placeholder' && activeItem.placeholder && (
             <FieldDragOverlay placeholder={activeItem.placeholder} formData={formData} />
           )}
