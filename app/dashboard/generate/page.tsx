@@ -42,8 +42,11 @@ function GeneratePageContent() {
   const searchParams = useSearchParams()
   const templateId = searchParams.get('template')
   const { templates } = useTemplates()
-  const { formData, updateFormData, clearFormData, isLoaded } = useFormStorage()
   const [selectedTemplates, setSelectedTemplates] = useState<string[]>([])
+  // Use template-scoped form storage so form data persists per template combination
+  const { formData, updateFormData, clearFormData, isLoaded } = useFormStorage(
+    selectedTemplates.length > 0 ? selectedTemplates : undefined
+  )
   const {
     sections,
     isAutoGrouped,

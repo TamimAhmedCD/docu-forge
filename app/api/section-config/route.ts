@@ -93,20 +93,31 @@ export async function POST(request: NextRequest) {
 }
 
 // DELETE - Delete section config
+// Supports both templateKey (exact match) and templateId (partial match for cascade delete)
 export async function DELETE(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
     const templateKey = searchParams.get('templateKey')
+    const templateId = searchParams.get('templateId')
 
-    if (!templateKey) {
+    if (!templateKey && !templateId) {
       return NextResponse.json(
-        { error: 'templateKey is required' },
+        { error: 'templateKey or templateId is required' },
         { status: 400 }
       )
     }
 
     const db = await getDatabase()
-    await db.collection('sectionConfigs').deleteOne({ templateKey })
+    
+    if (templateId) {
+      // Delete all configs that contain this template ID (cascade delete)
+      await db.collection('sectionConfigs').deleteMany({ 
+        templateKey: { $regex: templateId } 
+      })
+    } else if (templateKey) {
+      // Delete exact match
+      await db.collection('sectionConfigs').deleteOne({ templateKey })
+    }
 
     return NextResponse.json({ success: true })
   } catch (error) {

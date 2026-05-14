@@ -6,6 +6,7 @@ import { Template, Placeholder, PlaceholderSyncResult } from '@/types'
 import mammoth from 'mammoth'
 import { detectPlaceholders } from '@/lib/placeholder-utils'
 import { syncPlaceholders, clearSyncStatus } from '@/lib/placeholder-sync'
+import { preserveFormDataOnUpdate, deleteTemplateFormData } from '@/hooks/use-form-storage'
 
 export function useTemplates() {
   const [isLoading, setIsLoading] = useState(!store.isStoreInitialized())
@@ -51,6 +52,9 @@ export function useTemplates() {
   }, [])
 
   const removeTemplate = useCallback(async (id: string) => {
+    // Delete localStorage form data (cascade deletion)
+    deleteTemplateFormData(id)
+    // Delete from MongoDB (which also cascade deletes section configs)
     await store.removeTemplate(id)
   }, [])
 
@@ -82,6 +86,11 @@ export function useTemplates() {
     
     // Sync placeholders with existing configuration
     const syncResult = syncPlaceholders(existingTemplate.placeholders, result.value)
+    
+    // Preserve form data for placeholders that still exist
+    const oldPlaceholderIds = existingTemplate.placeholders.map(p => p.id)
+    const newPlaceholderIds = syncResult.placeholders.map(p => p.id)
+    preserveFormDataOnUpdate(templateId, oldPlaceholderIds, newPlaceholderIds)
     
     // Update template with new file and synced placeholders
     await store.updateTemplate(templateId, {

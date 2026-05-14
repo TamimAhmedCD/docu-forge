@@ -172,3 +172,17 @@ export function useSectionStorage(templateIds: string[]): SectionStorageResult {
     resetToDefault,
   }
 }
+
+/**
+ * Delete section config from MongoDB for a template
+ * Called when a template is deleted
+ */
+export async function deleteSectionConfig(templateId: string): Promise<void> {
+  try {
+    await fetch(`/api/section-config?templateId=${encodeURIComponent(templateId)}`, {
+      method: 'DELETE',
+    })
+  } catch (error) {
+    console.error('Failed to delete section config:', error)
+  }
+}

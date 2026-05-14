@@ -1,4 +1,5 @@
 import { Template, GeneratedDocument } from '@/types'
+import { deleteTemplateFormData } from '@/hooks/use-form-storage'
 
 // In-memory store for templates and generated documents
 // Using stable references for useSyncExternalStore compatibility
@@ -142,7 +143,10 @@ export async function removeTemplate(id: string): Promise<void> {
   templates = templates.filter(t => t.id !== id)
   notifyListeners()
 
-  // Remove from MongoDB
+  // Delete localStorage form data for this template
+  deleteTemplateFormData(id)
+
+  // Remove from MongoDB (cascade deletes section configs on server)
   try {
     const response = await fetch(`/api/templates/${id}`, {
       method: 'DELETE',
