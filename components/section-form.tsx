@@ -1132,6 +1132,37 @@ export function SectionForm({
     }).filter(section => section.placeholderIds.length > 0)
   }, [sections, searchQuery, placeholders])
 
+  // Calculate unassigned placeholders (not in any section)
+  const unassignedPlaceholders = useMemo(() => {
+    // Collect all placeholder IDs that are in sections (including in groups)
+    const assignedIds = new Set<string>()
+    for (const section of sections) {
+      for (const id of section.placeholderIds) {
+        if (id.startsWith('group-')) {
+          const groupId = id.replace('group-', '')
+          const group = section.groups?.find(g => g.id === groupId)
+          if (group) {
+            group.placeholderIds.forEach(pid => assignedIds.add(pid))
+          }
+        } else {
+          assignedIds.add(id)
+        }
+      }
+    }
+    // Return placeholders that are not assigned to any section
+    return placeholders.filter(p => !assignedIds.has(p.id))
+  }, [sections, placeholders])
+
+  // Filter unassigned placeholders by search query
+  const filteredUnassignedPlaceholders = useMemo(() => {
+    if (!searchQuery) return unassignedPlaceholders
+    const query = searchQuery.toLowerCase()
+    return unassignedPlaceholders.filter(p =>
+      p.name.toLowerCase().includes(query) ||
+      p.label.toLowerCase().includes(query)
+    )
+  }, [unassignedPlaceholders, searchQuery])
+
   // Overall progress
   const overallProgress = useMemo(() => {
     const filled = placeholders.filter(p => {
@@ -1417,16 +1448,8 @@ export function SectionForm({
 
   const handleResetToUngrouped = () => {
     saveToHistory()
-    // Reset all placeholders to a single "Ungrouped Fields" section
-    const ungroupedSection: FormSection = {
-      id: crypto.randomUUID(),
-      name: 'Ungrouped Fields',
-      placeholderIds: placeholders.map(p => p.id),
-      groups: [],
-      order: 0,
-      isExpanded: true,
-    }
-    onSectionsChange([ungroupedSection])
+    // Reset to empty sections - all placeholders become unassigned
+    onSectionsChange([])
     onAutoGroupedChange(false)
   }
 
@@ -1672,6 +1695,103 @@ export function SectionForm({
             ))}
           </div>
         </SortableContext>
+
+        {/* Unassigned Fields - shown when there are placeholders not in any section */}
+        {filteredUnassignedPlaceholders.length > 0 && (
+          <div className="mt-4 rounded-lg border border-dashed border-border bg-muted/20 p-4">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-medium text-muted-foreground">
+                  Unassigned Fields
+                </span>
+                <Badge variant="secondary" className="text-xs">
+                  {filteredUnassignedPlaceholders.length}
+                </Badge>
+              </div>
+              <span className="text-xs text-muted-foreground">
+                Create a section and drag fields into it
+              </span>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+              {filteredUnassignedPlaceholders.map((placeholder) => {
+                const value = formData[placeholder.id]
+                const isFilled = value !== undefined && value !== null && value !== ''
+                const isSelected = selectedFields.has(placeholder.id)
+                
+                return (
+                  <div
+                    key={placeholder.id}
+                    className={cn(
+                      "relative rounded-md border bg-background p-3 transition-all",
+                      isFilled ? "border-primary/30 bg-primary/5" : "border-border",
+                      isSelectionMode && "cursor-pointer hover:border-primary/50",
+                      isSelected && "ring-2 ring-primary border-primary"
+                    )}
+                    onClick={isSelectionMode ? () => handleToggleFieldSelection(placeholder.id) : undefined}
+                  >
+                    {isSelectionMode && (
+                      <div className="absolute top-2 right-2">
+                        {isSelected ? (
+                          <CheckSquare className="h-4 w-4 text-primary" />
+                        ) : (
+                          <Square className="h-4 w-4 text-muted-foreground" />
+                        )}
+                      </div>
+                    )}
+                    <Label htmlFor={`unassigned-${placeholder.id}`} className="text-sm font-medium mb-1.5 block">
+                      {placeholder.label}
+                      {placeholder.required && <span className="text-destructive ml-1">*</span>}
+                    </Label>
+                    {placeholder.type === 'textarea' ? (
+                      <Textarea
+                        id={`unassigned-${placeholder.id}`}
+                        name={placeholder.id}
+                        value={(value as string) || ''}
+                        onChange={(e) => onFormDataChange(placeholder.id, e.target.value)}
+                        placeholder={`Enter ${placeholder.label.toLowerCase()}`}
+                        rows={2}
+                        className={cn("resize-none text-sm min-h-[60px]", formInputClass)}
+                        disabled={isSelectionMode}
+                      />
+                    ) : placeholder.type === 'select' ? (
+                      <Select
+                        value={(value as string) || ''}
+                        onValueChange={(v) => onFormDataChange(placeholder.id, v)}
+                        disabled={isSelectionMode}
+                      >
+                        <SelectTrigger className={cn("h-9 text-sm", formInputClass)}>
+                          <SelectValue placeholder="Select..." />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {placeholder.options?.map((option) => (
+                            <SelectItem key={option} value={option}>
+                              {option}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    ) : (
+                      <Input
+                        id={`unassigned-${placeholder.id}`}
+                        name={placeholder.id}
+                        type={
+                          placeholder.type === 'number' ? 'number' :
+                          placeholder.type === 'date' ? 'date' :
+                          placeholder.type === 'email' ? 'email' : 'text'
+                        }
+                        value={(value as string) || ''}
+                        onChange={(e) => onFormDataChange(placeholder.id, e.target.value)}
+                        placeholder={`Enter ${placeholder.label.toLowerCase()}`}
+                        className={cn("h-9 text-sm", formInputClass)}
+                        disabled={isSelectionMode}
+                      />
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )}
 
         <DragOverlay dropAnimation={null} modifiers={[restrictToWindowEdges]}>
           {activeItem?.type === 'placeholder' && activeItem.placeholder && (

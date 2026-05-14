@@ -108,31 +108,23 @@ export function autoGroupPlaceholders(placeholders: Placeholder[]): FormSection[
 
 /**
  * Create a default section config from placeholders
- * All placeholders start in "Ungrouped Fields" - users manually organize them into sections
+ * Initially NO sections - all placeholders are unassigned
+ * Users manually create sections and drag placeholders into them
  */
-export function createDefaultSectionConfig(placeholders: Placeholder[]): SectionConfig {
-  // Keep all placeholders ungrouped initially
-  // Users will manually create sections and drag placeholders into them
-  const ungroupedSection: FormSection = {
-    id: crypto.randomUUID(),
-    name: 'Ungrouped Fields',
-    placeholderIds: placeholders.map(p => p.id),
-    groups: [],
-    order: 0,
-    isExpanded: true,
-  }
-  
+export function createDefaultSectionConfig(_placeholders: Placeholder[]): SectionConfig {
+  // No sections initially - placeholders are unassigned
   return {
-    sections: [ungroupedSection],
-    isAutoGrouped: false, // Manual organization by default
+    sections: [],
+    isAutoGrouped: false,
     lastModified: new Date(),
   }
 }
 
 /**
  * Sync sections when placeholders change (e.g., after template update)
- * Preserves existing section structure and adds new placeholders to "Ungrouped Fields"
- * New placeholders are NEVER automatically placed into existing sections
+ * Preserves existing section structure
+ * New placeholders remain UNASSIGNED - they are NOT added to any section
+ * Users must manually drag them into sections
  */
 export function syncSectionsWithPlaceholders(
   existingSections: FormSection[],
@@ -141,29 +133,9 @@ export function syncSectionsWithPlaceholders(
 ): FormSection[] {
   const newPlaceholderIds = new Set(newPlaceholders.map(p => p.id))
   
-  // Collect all existing placeholder IDs (both direct and inside groups)
-  const existingPlaceholderIds = new Set<string>()
-  for (const section of existingSections) {
-    for (const id of section.placeholderIds) {
-      if (id.startsWith('group-')) {
-        const groupId = id.replace('group-', '')
-        const group = section.groups?.find(g => g.id === groupId)
-        if (group) {
-          group.placeholderIds.forEach(pid => existingPlaceholderIds.add(pid))
-        }
-      } else {
-        existingPlaceholderIds.add(id)
-      }
-    }
-  }
-  
-  // Find new placeholders not in any section or group
-  const newIds = newPlaceholders
-    .filter(p => !existingPlaceholderIds.has(p.id))
-    .map(p => p.id)
-  
   // Remove placeholders that no longer exist from sections and groups
   // Note: Empty sections are preserved - they are NOT auto-deleted
+  // New placeholders remain unassigned until user manually adds them to a section
   const updatedSections = existingSections.map(section => {
     // Filter groups to remove non-existent placeholders
     const updatedGroups = (section.groups || []).map(group => ({
@@ -190,29 +162,8 @@ export function syncSectionsWithPlaceholders(
     }
   })
   
-  // If no new placeholders, return the cleaned sections
-  if (newIds.length === 0) {
-    return updatedSections
-  }
-  
-  // Always add new placeholders to "Ungrouped Fields" section
-  // This prevents layout breaking and gives users full manual control
-  const ungroupedSection = updatedSections.find(s => s.name === 'Ungrouped Fields')
-  
-  if (ungroupedSection) {
-    ungroupedSection.placeholderIds.push(...newIds)
-  } else {
-    // Create "Ungrouped Fields" section if it doesn't exist
-    updatedSections.push({
-      id: crypto.randomUUID(),
-      name: 'Ungrouped Fields',
-      placeholderIds: newIds,
-      groups: [],
-      order: updatedSections.length,
-      isExpanded: true,
-    })
-  }
-  
+  // New placeholders are NOT added to any section
+  // They will appear in the "Unassigned Fields" area in the UI
   return updatedSections
 }
 
