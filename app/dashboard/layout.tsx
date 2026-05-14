@@ -4,6 +4,7 @@ import { Menu, Bell, Search, User } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Sidebar, SidebarProvider, useSidebar } from '@/components/sidebar'
+import { ThemeToggle } from '@/components/theme-toggle'
 import { cn } from '@/lib/utils'
 
 function DashboardContent({ children }: { children: React.ReactNode }) {
@@ -41,13 +42,14 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
           </div>
 
           {/* Right side actions */}
-          <div className="flex items-center gap-2">
-            <Button variant="ghost" size="icon" className="relative" tabIndex={-1}>
+          <div className="flex items-center gap-1">
+            <ThemeToggle />
+            <Button variant="ghost" size="icon" className="relative h-9 w-9" tabIndex={-1}>
               <Bell className="h-4 w-4 text-muted-foreground" />
               <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-primary" />
               <span className="sr-only">Notifications</span>
             </Button>
-            <Button variant="ghost" size="icon" className="rounded-full" tabIndex={-1}>
+            <Button variant="ghost" size="icon" className="rounded-full h-9 w-9" tabIndex={-1}>
               <div className="flex h-7 w-7 items-center justify-center rounded-full bg-gradient-to-br from-primary/80 to-primary">
                 <User className="h-3.5 w-3.5 text-primary-foreground" />
               </div>

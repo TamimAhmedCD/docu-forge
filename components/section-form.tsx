@@ -1,7 +1,7 @@
 'use client'
 
-import { useState, useMemo, useRef, useCallback } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
+import { useState, useMemo, useRef, useCallback, useEffect } from 'react'
+import { motion, AnimatePresence, useSpring, useTransform } from 'framer-motion'
 import {
   DndContext,
   DragOverlay,
@@ -14,12 +14,14 @@ import {
   DragStartEvent,
   DragEndEvent,
   DragOverEvent,
+  DragMoveEvent,
   UniqueIdentifier,
   MeasuringStrategy,
   useDroppable,
   CollisionDetection,
   type DropAnimation,
   defaultDropAnimationSideEffects,
+  useDndMonitor,
 } from '@dnd-kit/core'
 import {
   arrayMove,
@@ -30,7 +32,7 @@ import {
   rectSortingStrategy,
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import { restrictToVerticalAxis, restrictToWindowEdges } from '@dnd-kit/modifiers'
+import { restrictToWindowEdges } from '@dnd-kit/modifiers'
 import {
   ChevronDown,
   ChevronRight,
@@ -115,17 +117,76 @@ interface SectionFormProps {
   onAutoGroupedChange: (value: boolean) => void
 }
 
-// Smooth drop animation configuration
+// Smooth drop animation configuration with spring physics
 const dropAnimationConfig: DropAnimation = {
   sideEffects: defaultDropAnimationSideEffects({
     styles: {
       active: {
-        opacity: '0.5',
+        opacity: '0.4',
       },
     },
   }),
-  duration: 250,
-  easing: 'cubic-bezier(0.25, 0.1, 0.25, 1)',
+  duration: 300,
+  easing: 'cubic-bezier(0.22, 1, 0.36, 1)',
+}
+
+// Spring animation configurations for smooth motion
+const springTransition = {
+  type: 'spring' as const,
+  stiffness: 400,
+  damping: 30,
+  mass: 0.8,
+}
+
+const smoothSpringTransition = {
+  type: 'spring' as const,
+  stiffness: 300,
+  damping: 25,
+  mass: 1,
+}
+
+// Animated insertion line component
+function InsertionIndicator({ 
+  isVisible, 
+  orientation = 'horizontal' 
+}: { 
+  isVisible: boolean
+  orientation?: 'horizontal' | 'vertical'
+}) {
+  return (
+    <AnimatePresence>
+      {isVisible && (
+        <motion.div
+          initial={{ opacity: 0, scaleX: orientation === 'horizontal' ? 0 : 1, scaleY: orientation === 'vertical' ? 0 : 1 }}
+          animate={{ opacity: 1, scaleX: 1, scaleY: 1 }}
+          exit={{ opacity: 0, scaleX: orientation === 'horizontal' ? 0 : 1, scaleY: orientation === 'vertical' ? 0 : 1 }}
+          transition={springTransition}
+          className={cn(
+            "bg-primary rounded-full",
+            orientation === 'horizontal' 
+              ? "h-0.5 w-full my-1" 
+              : "w-0.5 h-full mx-1"
+          )}
+          style={{
+            boxShadow: '0 0 8px var(--primary), 0 0 16px var(--primary)',
+          }}
+        />
+      )}
+    </AnimatePresence>
+  )
+}
+
+// Spacing preview during drag
+function SpacingPreview({ height }: { height: number }) {
+  return (
+    <motion.div
+      initial={{ height: 0, opacity: 0 }}
+      animate={{ height, opacity: 0.5 }}
+      exit={{ height: 0, opacity: 0 }}
+      transition={springTransition}
+      className="bg-primary/10 border-2 border-dashed border-primary/30 rounded-lg"
+    />
+  )
 }
 
 // Types for drag items
@@ -149,7 +210,7 @@ function DroppableSectionArea({
   isEmpty?: boolean
   collapsed?: boolean
 }) {
-  const { setNodeRef, isOver } = useDroppable({
+  const { setNodeRef, isOver, active } = useDroppable({
     id: `section-drop-${sectionId}`,
     data: {
       type: 'section' as DragItemType,
@@ -157,44 +218,85 @@ function DroppableSectionArea({
     },
   })
 
+  const isReceivingDrop = isOver && active?.data?.current?.sectionId !== sectionId
+
   // Collapsed sections show a minimal drop indicator
   if (collapsed) {
     return (
-      <div 
+      <motion.div 
         ref={setNodeRef}
+        initial={false}
+        animate={{
+          height: isReceivingDrop ? 48 : 8,
+          backgroundColor: isReceivingDrop ? 'hsl(var(--primary) / 0.15)' : 'transparent',
+        }}
+        transition={springTransition}
         className={cn(
-          "h-2 transition-all duration-200 mx-4 mb-2 rounded",
-          isOver ? "h-12 bg-primary/20 border-2 border-dashed border-primary" : "bg-transparent"
+          "mx-4 mb-2 rounded-lg border-2 border-dashed transition-colors",
+          isReceivingDrop ? "border-primary" : "border-transparent"
         )}
-      />
+      >
+        <AnimatePresence>
+          {isReceivingDrop && (
+            <motion.div
+              initial={{ opacity: 0, y: -10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              className="flex items-center justify-center h-full text-xs text-primary font-medium"
+            >
+              Drop here to add
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </motion.div>
     )
   }
 
   if (isEmpty) {
     return (
-      <div 
+      <motion.div 
         ref={setNodeRef}
+        initial={false}
+        animate={{
+          scale: isReceivingDrop ? 1.02 : 1,
+          borderColor: isReceivingDrop ? 'hsl(var(--primary))' : 'hsl(var(--border))',
+        }}
+        transition={springTransition}
         className={cn(
-          "text-center py-10 text-muted-foreground border-2 border-dashed rounded-lg transition-all duration-200",
-          isOver ? "border-primary bg-primary/10" : "border-border"
+          "text-center py-10 text-muted-foreground border-2 border-dashed rounded-lg",
+          isReceivingDrop && "bg-primary/10"
         )}
       >
-        <p>No fields in this section</p>
-        <p className="text-sm">Drag fields here to add them</p>
-      </div>
+        <motion.div
+          animate={{ scale: isReceivingDrop ? 1.05 : 1 }}
+          transition={springTransition}
+        >
+          <p className={isReceivingDrop ? "text-primary font-medium" : ""}>
+            {isReceivingDrop ? "Release to drop here" : "No fields in this section"}
+          </p>
+          <p className="text-sm">Drag fields here to add them</p>
+        </motion.div>
+      </motion.div>
     )
   }
 
   return (
-    <div 
+    <motion.div 
       ref={setNodeRef}
+      initial={false}
+      animate={{
+        boxShadow: isReceivingDrop 
+          ? '0 0 0 2px hsl(var(--primary) / 0.5), inset 0 0 20px hsl(var(--primary) / 0.05)' 
+          : '0 0 0 0 transparent',
+      }}
+      transition={springTransition}
       className={cn(
-        "min-h-[60px] rounded-lg transition-all duration-200",
-        isOver && "ring-2 ring-primary/50 bg-primary/5"
+        "min-h-[60px] rounded-lg transition-colors",
+        isReceivingDrop && "bg-primary/5"
       )}
     >
       {children}
-    </div>
+    </motion.div>
   )
 }
 
@@ -209,6 +311,8 @@ function SortableField({
   isSelectionMode,
   isSelected,
   onToggleSelection,
+  isOverlay,
+  showInsertBefore,
 }: {
   placeholder: Placeholder
   sectionId: string
@@ -219,6 +323,8 @@ function SortableField({
   isSelectionMode?: boolean
   isSelected?: boolean
   onToggleSelection?: (id: string) => void
+  isOverlay?: boolean
+  showInsertBefore?: boolean
 }) {
   const {
     attributes,
@@ -227,6 +333,7 @@ function SortableField({
     transform,
     transition,
     isDragging: isSortableDragging,
+    isOver,
   } = useSortable({
     id: `placeholder-${placeholder.id}`,
     data: {
@@ -238,42 +345,64 @@ function SortableField({
 
   const style = {
     transform: CSS.Transform.toString(transform),
-    transition: transition || 'transform 250ms cubic-bezier(0.25, 0.1, 0.25, 1)',
+    transition: transition || 'transform 200ms cubic-bezier(0.22, 1, 0.36, 1)',
   }
 
   const value = formData[placeholder.id]
   const isFilled = value !== undefined && value !== null && value !== ''
   const fieldWidth = detectFieldWidth(placeholder)
 
+  // Dragging placeholder - shows where item was
   if (isSortableDragging || isDragging) {
     return (
       <motion.div
         ref={setNodeRef}
         style={style}
-        initial={{ scale: 1, opacity: 0.8 }}
-        animate={{ scale: 0.98, opacity: 0.6 }}
-        transition={{ duration: 0.2 }}
+        initial={{ scale: 1, opacity: 0.6 }}
+        animate={{ 
+          scale: 0.97, 
+          opacity: 0.4,
+        }}
+        transition={springTransition}
         className={cn(
-          'rounded-lg border-2 border-dashed border-primary/50 bg-primary/10 h-16',
+          'rounded-lg border-2 border-dashed border-primary/40 bg-primary/5 h-16 relative overflow-hidden',
           getFieldWidthClasses(fieldWidth)
         )}
-      />
+      >
+        {/* Animated shimmer effect */}
+        <motion.div
+          className="absolute inset-0 bg-gradient-to-r from-transparent via-primary/10 to-transparent"
+          animate={{ x: ['-100%', '100%'] }}
+          transition={{ duration: 1.5, repeat: Infinity, ease: 'linear' }}
+        />
+      </motion.div>
     )
   }
 
   return (
-    <motion.div
-      ref={setNodeRef}
-      style={style}
-      layout
-      transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-      className={cn(
-        'group relative rounded-lg border border-border bg-card p-3 transition-colors hover:border-muted-foreground/30',
-        isFilled && 'border-primary/30 bg-primary/5',
-        isSelectionMode && isSelected && 'ring-2 ring-primary border-primary',
-        getFieldWidthClasses(fieldWidth)
-      )}
-    >
+    <>
+      {/* Insertion indicator */}
+      <InsertionIndicator isVisible={!!showInsertBefore} />
+      
+      <motion.div
+        ref={setNodeRef}
+        style={style}
+        layout
+        layoutId={isOverlay ? undefined : `field-${placeholder.id}`}
+        initial={false}
+        animate={{
+          scale: isOver && !isSortableDragging ? 1.02 : 1,
+          y: 0,
+        }}
+        transition={smoothSpringTransition}
+        className={cn(
+          'group relative rounded-lg border border-border bg-card p-3 transition-colors hover:border-muted-foreground/30',
+          isFilled && 'border-primary/30 bg-primary/5',
+          isSelectionMode && isSelected && 'ring-2 ring-primary border-primary',
+          isOver && !isSortableDragging && 'border-primary/50 shadow-lg shadow-primary/10',
+          getFieldWidthClasses(fieldWidth)
+        )}
+      >
       {/* Selection Checkbox */}
       {isSelectionMode && (
         <button
@@ -705,7 +834,7 @@ function GroupField({
   )
 }
 
-// Sortable Unassigned Field Component - allows dragging unassigned fields
+// Sortable Unassigned Field Component - allows dragging and reordering unassigned fields
 function SortableUnassignedField({
   placeholder,
   formData,
@@ -714,6 +843,8 @@ function SortableUnassignedField({
   isSelectionMode,
   isSelected,
   onToggleSelection,
+  index,
+  onReorder,
 }: {
   placeholder: Placeholder
   formData: FormDataType
@@ -722,6 +853,8 @@ function SortableUnassignedField({
   isSelectionMode?: boolean
   isSelected?: boolean
   onToggleSelection?: (id: string) => void
+  index?: number
+  onReorder?: (fromIndex: number, toIndex: number) => void
 }) {
   const {
     attributes,
@@ -730,20 +863,21 @@ function SortableUnassignedField({
     transform,
     transition,
     isDragging: isSortableDragging,
+    isOver,
   } = useSortable({
     id: `unassigned-${placeholder.id}`,
     data: {
       type: 'placeholder' as DragItemType,
       sectionId: 'unassigned',
       placeholderId: placeholder.id,
+      index,
     },
   })
 
-  // Only apply transform when actively dragging this item, not when others move around it
-  // This prevents confusing visual reordering within unassigned area
+  // Apply transform for smooth reordering animation
   const style = {
-    transform: isSortableDragging ? CSS.Transform.toString(transform) : undefined,
-    transition: transition || 'transform 250ms cubic-bezier(0.25, 0.1, 0.25, 1)',
+    transform: CSS.Transform.toString(transform),
+    transition: transition || 'transform 200ms cubic-bezier(0.22, 1, 0.36, 1)',
   }
 
   const value = formData[placeholder.id]
@@ -754,10 +888,18 @@ function SortableUnassignedField({
       <motion.div
         ref={setNodeRef}
         style={style}
-        initial={{ scale: 1, opacity: 0.8 }}
-        animate={{ scale: 0.98, opacity: 0.6 }}
-        className="rounded-lg border-2 border-dashed border-primary/50 bg-primary/10 h-24"
-      />
+        initial={{ scale: 1, opacity: 0.6 }}
+        animate={{ scale: 0.97, opacity: 0.4 }}
+        transition={springTransition}
+        className="rounded-lg border-2 border-dashed border-primary/40 bg-primary/5 h-24 relative overflow-hidden"
+      >
+        {/* Animated shimmer effect */}
+        <motion.div
+          className="absolute inset-0 bg-gradient-to-r from-transparent via-primary/10 to-transparent"
+          animate={{ x: ['-100%', '100%'] }}
+          transition={{ duration: 1.5, repeat: Infinity, ease: 'linear' }}
+        />
+      </motion.div>
     )
   }
 
@@ -766,11 +908,17 @@ function SortableUnassignedField({
       ref={setNodeRef}
       style={style}
       layout
-      transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+      layoutId={`unassigned-${placeholder.id}`}
+      initial={false}
+      animate={{
+        scale: isOver && !isSortableDragging ? 1.02 : 1,
+      }}
+      transition={smoothSpringTransition}
       className={cn(
-        'group relative rounded-md border bg-background p-3 transition-colors',
+        'group relative rounded-md border bg-card p-3 transition-colors',
         isFilled ? 'border-primary/30 bg-primary/5' : 'border-border',
-        isSelectionMode && isSelected && 'ring-2 ring-primary border-primary'
+        isSelectionMode && isSelected && 'ring-2 ring-primary border-primary',
+        isOver && !isSortableDragging && 'border-primary/50 shadow-md shadow-primary/10'
       )}
     >
       {/* Selection Checkbox */}
@@ -875,31 +1023,53 @@ function DroppableUnassignedArea({
   const isDraggingFromSection = active?.data?.current?.sectionId && 
     active.data.current.sectionId !== 'unassigned'
 
+  const isReceivingDrop = isOver && isDraggingFromSection
+
   if (isEmpty) {
     return (
-      <div 
+      <motion.div 
         ref={setNodeRef}
+        initial={false}
+        animate={{
+          scale: isReceivingDrop ? 1.02 : 1,
+          borderColor: isReceivingDrop ? 'hsl(var(--primary))' : 'hsl(var(--border))',
+        }}
+        transition={springTransition}
         className={cn(
-          "text-center py-10 text-muted-foreground border-2 border-dashed rounded-lg transition-all duration-300",
-          isOver && isDraggingFromSection ? "border-primary bg-primary/10 scale-[1.02]" : "border-border"
+          "text-center py-10 text-muted-foreground border-2 border-dashed rounded-lg",
+          isReceivingDrop && "bg-primary/10"
         )}
       >
-        <p>No unassigned fields</p>
-        <p className="text-sm">Drag fields here to unassign them</p>
-      </div>
+        <motion.div
+          animate={{ scale: isReceivingDrop ? 1.05 : 1 }}
+          transition={springTransition}
+        >
+          <p className={isReceivingDrop ? "text-primary font-medium" : ""}>
+            {isReceivingDrop ? "Release to unassign" : "No unassigned fields"}
+          </p>
+          <p className="text-sm">Drag fields here to unassign them</p>
+        </motion.div>
+      </motion.div>
     )
   }
 
   return (
-    <div 
+    <motion.div 
       ref={setNodeRef}
+      initial={false}
+      animate={{
+        boxShadow: isReceivingDrop 
+          ? '0 0 0 2px hsl(var(--primary) / 0.5), inset 0 0 20px hsl(var(--primary) / 0.05)' 
+          : '0 0 0 0 transparent',
+      }}
+      transition={springTransition}
       className={cn(
-        "min-h-[60px] rounded-lg transition-all duration-300",
-        isOver && isDraggingFromSection && "ring-2 ring-primary/50 bg-primary/5"
+        "min-h-[60px] rounded-lg transition-colors",
+        isReceivingDrop && "bg-primary/5"
       )}
     >
       {children}
-    </div>
+    </motion.div>
   )
 }
 
@@ -1163,29 +1333,53 @@ function SortableSection({
   )
   }
   
-// Field Drag Overlay Component
+// Field Drag Overlay Component - professional floating preview
 function FieldDragOverlay({ placeholder, formData }: { placeholder: Placeholder; formData: FormDataType }) {
   const value = formData[placeholder.id]
   const isFilled = value !== undefined && value !== null && value !== ''
+  const fieldWidth = detectFieldWidth(placeholder)
 
   return (
     <motion.div
-      initial={{ scale: 1.02, rotate: 1, boxShadow: '0 10px 40px rgba(0,0,0,0.15)' }}
-      animate={{ scale: 1.05, rotate: 2, boxShadow: '0 20px 50px rgba(0,0,0,0.2)' }}
-      transition={{ type: 'spring', stiffness: 300, damping: 25 }}
+      initial={{ scale: 1, rotate: 0, opacity: 0.9 }}
+      animate={{ 
+        scale: 1.03, 
+        rotate: 1.5,
+        opacity: 1,
+      }}
+      transition={smoothSpringTransition}
       className={cn(
-        'rounded-lg border-2 border-primary bg-card p-4 w-full max-w-md cursor-grabbing',
+        'rounded-lg border-2 border-primary bg-card p-4 w-full max-w-sm cursor-grabbing relative overflow-hidden',
         isFilled && 'border-primary bg-primary/5'
       )}
+      style={{
+        boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25), 0 0 0 1px hsl(var(--primary) / 0.2)',
+      }}
     >
-      <div className="flex items-center gap-2">
-        <GripVertical className="h-4 w-4 text-primary animate-pulse" />
-        <Label className="flex items-center gap-2">
-          {placeholder.label}
-          {placeholder.required && (
-            <span className="text-destructive">*</span>
-          )}
-        </Label>
+      {/* Subtle gradient overlay */}
+      <div className="absolute inset-0 bg-gradient-to-br from-primary/5 to-transparent pointer-events-none" />
+      
+      <div className="flex items-center gap-3 relative">
+        <motion.div
+          animate={{ scale: [1, 1.2, 1] }}
+          transition={{ duration: 0.6, repeat: Infinity }}
+        >
+          <GripVertical className="h-5 w-5 text-primary" />
+        </motion.div>
+        <div className="flex-1 min-w-0">
+          <Label className="flex items-center gap-2 text-foreground font-medium">
+            {placeholder.label}
+            {placeholder.required && (
+              <span className="text-destructive text-sm">*</span>
+            )}
+          </Label>
+          <p className="text-xs text-muted-foreground mt-0.5 truncate">
+            {isFilled ? String(value).slice(0, 30) + (String(value).length > 30 ? '...' : '') : 'Not filled'}
+          </p>
+        </div>
+        <Badge variant="outline" className="text-[10px] px-1.5 shrink-0">
+          {placeholder.type}
+        </Badge>
       </div>
     </motion.div>
   )
@@ -1201,19 +1395,38 @@ function SectionDragOverlay({ section, placeholders, formData }: {
 
   return (
     <motion.div
-      initial={{ scale: 1.01, rotate: 0.5, boxShadow: '0 15px 50px rgba(0,0,0,0.15)' }}
-      animate={{ scale: 1.03, rotate: 1, boxShadow: '0 25px 60px rgba(0,0,0,0.25)' }}
-      transition={{ type: 'spring', stiffness: 250, damping: 25 }}
-      className="rounded-xl border-2 border-primary bg-card overflow-hidden w-full max-w-2xl cursor-grabbing"
+      initial={{ scale: 1, rotate: 0, opacity: 0.9 }}
+      animate={{ 
+        scale: 1.02, 
+        rotate: 0.75,
+        opacity: 1,
+      }}
+      transition={smoothSpringTransition}
+      className="rounded-xl border-2 border-primary bg-card overflow-hidden w-full max-w-xl cursor-grabbing"
+      style={{
+        boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25), 0 0 0 1px hsl(var(--primary) / 0.2)',
+      }}
     >
-      <div className="flex items-center gap-3 p-4">
-        <GripVertical className="h-5 w-5 text-primary animate-pulse" />
+      {/* Subtle gradient overlay */}
+      <div className="absolute inset-0 bg-gradient-to-br from-primary/5 to-transparent pointer-events-none" />
+      
+      <div className="flex items-center gap-3 p-4 relative">
+        <motion.div
+          animate={{ scale: [1, 1.2, 1] }}
+          transition={{ duration: 0.6, repeat: Infinity }}
+        >
+          <GripVertical className="h-5 w-5 text-primary" />
+        </motion.div>
         <ChevronRight className="h-5 w-5 text-muted-foreground shrink-0" />
         <div className="flex-1 min-w-0">
           <h3 className="font-semibold text-foreground truncate">{section.name}</h3>
           <p className="text-xs text-muted-foreground">
-            {progress.filled}/{progress.total} fields
+            {progress.filled}/{progress.total} fields completed
           </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <Progress value={progress.percentage} className="w-16 h-1.5" />
+          <span className="text-xs text-muted-foreground font-medium">{progress.percentage}%</span>
         </div>
       </div>
     </motion.div>
@@ -1237,16 +1450,31 @@ function GroupDragOverlay({ group, placeholders, formData }: {
 
   return (
     <motion.div 
-      initial={{ scale: 1.02, rotate: 1, boxShadow: '0 10px 40px rgba(0,0,0,0.15)' }}
-      animate={{ scale: 1.05, rotate: 1.5, boxShadow: '0 20px 50px rgba(0,0,0,0.2)' }}
-      transition={{ type: 'spring', stiffness: 300, damping: 25 }}
+      initial={{ scale: 1, rotate: 0, opacity: 0.9 }}
+      animate={{ 
+        scale: 1.03, 
+        rotate: 1,
+        opacity: 1,
+      }}
+      transition={smoothSpringTransition}
       className={cn(
-        "rounded-lg border-2 border-primary bg-card w-full max-w-md p-3 cursor-grabbing",
+        "rounded-lg border-2 border-primary bg-card w-full max-w-md p-3 cursor-grabbing relative overflow-hidden",
         group.color
       )}
+      style={{
+        boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25), 0 0 0 1px hsl(var(--primary) / 0.2)',
+      }}
     >
-      <div className="flex items-center gap-2">
-        <GripVertical className="h-4 w-4 text-primary animate-pulse" />
+      {/* Subtle gradient overlay */}
+      <div className="absolute inset-0 bg-gradient-to-br from-primary/5 to-transparent pointer-events-none" />
+      
+      <div className="flex items-center gap-2 relative">
+        <motion.div
+          animate={{ scale: [1, 1.2, 1] }}
+          transition={{ duration: 0.6, repeat: Infinity }}
+        >
+          <GripVertical className="h-4 w-4 text-primary" />
+        </motion.div>
         <Group className="h-4 w-4 text-muted-foreground" />
         <span className="font-medium">{group.name}</span>
         <Badge variant="secondary" className="text-xs ml-auto">
@@ -1287,6 +1515,9 @@ export function SectionForm({
   const [selectedFields, setSelectedFields] = useState<Set<string>>(new Set())
   const [showGroupDialog, setShowGroupDialog] = useState(false)
   const [newGroupName, setNewGroupName] = useState('')
+  
+  // Track custom order for unassigned fields (array of placeholder IDs)
+  const [unassignedFieldOrder, setUnassignedFieldOrder] = useState<string[]>([])
 
   // Configure sensors with touch support
   const sensors = useSensors(
@@ -1395,9 +1626,44 @@ export function SectionForm({
         }
       }
     }
-    // Return placeholders that are not assigned to any section
-    return placeholders.filter(p => !assignedIds.has(p.id))
-  }, [sections, placeholders])
+    // Get all unassigned placeholder IDs
+    const unassignedIds = placeholders.filter(p => !assignedIds.has(p.id)).map(p => p.id)
+    
+    // Sort by custom order if we have one, otherwise use natural order
+    const orderedIds = unassignedFieldOrder.length > 0
+      ? [...unassignedIds].sort((a, b) => {
+          const indexA = unassignedFieldOrder.indexOf(a)
+          const indexB = unassignedFieldOrder.indexOf(b)
+          // Items not in the order array go to the end
+          if (indexA === -1 && indexB === -1) return 0
+          if (indexA === -1) return 1
+          if (indexB === -1) return -1
+          return indexA - indexB
+        })
+      : unassignedIds
+    
+    // Return placeholders in the correct order
+    return orderedIds
+      .map(id => placeholders.find(p => p.id === id))
+      .filter(Boolean) as Placeholder[]
+  }, [sections, placeholders, unassignedFieldOrder])
+  
+  // Sync unassigned field order when placeholders change
+  useEffect(() => {
+    const currentUnassignedIds = unassignedPlaceholders.map(p => p.id)
+    // Only update if we have no order yet or if the IDs have changed
+    if (unassignedFieldOrder.length === 0 && currentUnassignedIds.length > 0) {
+      setUnassignedFieldOrder(currentUnassignedIds)
+    } else {
+      // Clean up any IDs that are no longer unassigned
+      const validOrder = unassignedFieldOrder.filter(id => currentUnassignedIds.includes(id))
+      // Add any new unassigned IDs to the end
+      const newIds = currentUnassignedIds.filter(id => !unassignedFieldOrder.includes(id))
+      if (newIds.length > 0 || validOrder.length !== unassignedFieldOrder.length) {
+        setUnassignedFieldOrder([...validOrder, ...newIds])
+      }
+    }
+  }, [placeholders, sections]) // Don't include unassignedFieldOrder to avoid infinite loop
 
   // Filter unassigned placeholders by search query
   const filteredUnassignedPlaceholders = useMemo(() => {
@@ -1601,10 +1867,28 @@ export function SectionForm({
       const activePlaceholderId = activeData.placeholderId
       if (!activePlaceholderId) return
       
-      // Skip if dragging within unassigned area (no reordering needed for unassigned)
+      // Handle dragging within unassigned area
       if (activeData.sectionId === 'unassigned') {
-        // Check if we're dropping onto a section
         const overId = String(over.id)
+        
+        // Check if we're dropping onto another unassigned field (reordering)
+        if (overId.startsWith('unassigned-') && overData?.sectionId === 'unassigned') {
+          const overPlaceholderId = overId.replace('unassigned-', '')
+          if (overPlaceholderId !== activePlaceholderId) {
+            // Reorder within unassigned area
+            const currentOrder = unassignedPlaceholders.map(p => p.id)
+            const activeIndex = currentOrder.indexOf(activePlaceholderId)
+            const overIndex = currentOrder.indexOf(overPlaceholderId)
+            
+            if (activeIndex !== -1 && overIndex !== -1) {
+              const newOrder = arrayMove(currentOrder, activeIndex, overIndex)
+              setUnassignedFieldOrder(newOrder)
+            }
+          }
+          return
+        }
+        
+        // Check if we're dropping onto a section
         let targetSectionId: string | undefined
         
         if (overData?.sectionId && overData.sectionId !== 'unassigned') {
@@ -1626,6 +1910,8 @@ export function SectionForm({
             }
           }
           
+          // Remove from unassigned order when moving to a section
+          setUnassignedFieldOrder(prev => prev.filter(id => id !== activePlaceholderId))
           onSectionsChange(addPlaceholderToSection(sections, activePlaceholderId, targetSectionId, targetIndex))
           onAutoGroupedChange(false)
         }

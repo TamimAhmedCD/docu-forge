@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from 'next'
 import { Geist, Geist_Mono } from 'next/font/google'
 import { Analytics } from '@vercel/analytics/next'
 import { Toaster } from 'sonner'
+import { ThemeProvider } from '@/components/theme-provider'
 import './globals.css'
 
 const _geist = Geist({ subsets: ["latin"] });
@@ -31,7 +32,10 @@ export const metadata: Metadata = {
 }
 
 export const viewport: Viewport = {
-  themeColor: '#1a1a1a',
+  themeColor: [
+    { media: '(prefers-color-scheme: light)', color: '#fafafa' },
+    { media: '(prefers-color-scheme: dark)', color: '#1a1a1a' },
+  ],
   width: 'device-width',
   initialScale: 1,
 }
@@ -42,19 +46,24 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   return (
-    <html lang="en" className="bg-background">
-      <body className="font-sans antialiased">
-        {children}
-        <Toaster 
-          position="bottom-right" 
-          toastOptions={{
-            style: {
-              background: 'oklch(0.17 0 0)',
-              border: '1px solid oklch(0.25 0 0)',
-              color: 'oklch(0.98 0 0)',
-            },
-          }}
-        />
+    <html lang="en" suppressHydrationWarning>
+      <body className="font-sans antialiased bg-background">
+        <ThemeProvider
+          attribute="class"
+          defaultTheme="system"
+          enableSystem
+          disableTransitionOnChange={false}
+        >
+          {children}
+          <Toaster 
+            position="bottom-right" 
+            toastOptions={{
+              classNames: {
+                toast: 'bg-card border-border text-foreground',
+              },
+            }}
+          />
+        </ThemeProvider>
         {process.env.NODE_ENV === 'production' && <Analytics />}
       </body>
     </html>
