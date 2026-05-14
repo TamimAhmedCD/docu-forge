@@ -74,30 +74,49 @@ export function detectFieldWidth(placeholder: Placeholder): FieldWidth {
   return 'medium'
 }
 
+// Static mapping for col-span classes (Tailwind requires static strings, not dynamic)
+// Maps to a 6-column grid layout
+const COL_SPAN_CLASSES = {
+  1: 'col-span-6 sm:col-span-3 lg:col-span-1',
+  2: 'col-span-6 sm:col-span-3 lg:col-span-2',
+  3: 'col-span-6 sm:col-span-6 lg:col-span-3',
+  4: 'col-span-6 sm:col-span-6 lg:col-span-4',
+  5: 'col-span-6 sm:col-span-6 lg:col-span-5',
+  6: 'col-span-6',
+} as const
+
+// Map FieldWidth to span number (1-6)
+const WIDTH_TO_SPAN: Record<FieldWidth, number> = {
+  compact: 1,
+  medium: 2,
+  large: 3,
+  xlarge: 4,
+  full: 6,
+}
+
+/**
+ * Clamp a number between 1 and 6
+ */
+export function clampSpan(span: number): 1 | 2 | 3 | 4 | 5 | 6 {
+  return Math.max(1, Math.min(6, Math.round(span))) as 1 | 2 | 3 | 4 | 5 | 6
+}
+
 /**
  * Get Tailwind CSS classes for field width
  * Uses a 6-column grid for maximum flexibility
+ * Uses static class mappings to ensure Tailwind compilation works correctly
  */
 export function getFieldWidthClasses(width: FieldWidth): string {
-  switch (width) {
-    case 'compact':
-      // 1 column span
-      return 'col-span-6 sm:col-span-3 md:col-span-2 lg:col-span-1'
-    case 'medium':
-      // 2 column span
-      return 'col-span-6 sm:col-span-3 lg:col-span-2'
-    case 'large':
-      // 3 column span
-      return 'col-span-6 sm:col-span-6 md:col-span-3'
-    case 'xlarge':
-      // 4 column span
-      return 'col-span-6 md:col-span-6 lg:col-span-4'
-    case 'full':
-      // Full width always
-      return 'col-span-6'
-    default:
-      return 'col-span-6 sm:col-span-3 lg:col-span-2'
-  }
+  const span = clampSpan(WIDTH_TO_SPAN[width] || 2)
+  return COL_SPAN_CLASSES[span]
+}
+
+/**
+ * Get field width classes from a numeric span value (1-6)
+ */
+export function getSpanClasses(span: number): string {
+  const clampedSpan = clampSpan(span)
+  return COL_SPAN_CLASSES[clampedSpan]
 }
 
 /**

@@ -4,58 +4,58 @@
 @custom-variant dark (&:is(.dark *));
 
 :root {
-  /* Light theme - Clean and professional */
-  --background: oklch(0.985 0 0);
-  --foreground: oklch(0.15 0.005 280);
+  /* Light theme - Clean, modern and professional */
+  --background: oklch(0.98 0.002 280);
+  --foreground: oklch(0.14 0.01 280);
   --card: oklch(1 0 0);
-  --card-foreground: oklch(0.15 0.005 280);
+  --card-foreground: oklch(0.14 0.01 280);
   --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.15 0.005 280);
+  --popover-foreground: oklch(0.14 0.01 280);
   
-  /* Primary - Soft cyan accent */
-  --primary: oklch(0.55 0.15 190);
-  --primary-foreground: oklch(0.98 0 0);
+  /* Primary - Vibrant teal/cyan accent */
+  --primary: oklch(0.52 0.14 195);
+  --primary-foreground: oklch(0.99 0 0);
   
-  --secondary: oklch(0.95 0.005 280);
-  --secondary-foreground: oklch(0.20 0 0);
-  --muted: oklch(0.95 0.005 280);
-  --muted-foreground: oklch(0.45 0 0);
-  --accent: oklch(0.95 0.01 280);
-  --accent-foreground: oklch(0.15 0 0);
-  --destructive: oklch(0.55 0.20 25);
-  --destructive-foreground: oklch(0.98 0 0);
-  --border: oklch(0.88 0.005 280);
-  --input: oklch(0.92 0.005 280);
-  --ring: oklch(0.55 0.15 190);
+  --secondary: oklch(0.96 0.005 280);
+  --secondary-foreground: oklch(0.22 0.01 280);
+  --muted: oklch(0.96 0.005 280);
+  --muted-foreground: oklch(0.48 0.01 280);
+  --accent: oklch(0.96 0.008 280);
+  --accent-foreground: oklch(0.14 0.01 280);
+  --destructive: oklch(0.55 0.22 25);
+  --destructive-foreground: oklch(0.99 0 0);
+  --border: oklch(0.90 0.005 280);
+  --input: oklch(0.96 0.002 280);
+  --ring: oklch(0.52 0.14 195);
   
   /* Charts */
-  --chart-1: oklch(0.55 0.15 190);
-  --chart-2: oklch(0.55 0.14 150);
-  --chart-3: oklch(0.50 0.10 280);
-  --chart-4: oklch(0.60 0.12 85);
-  --chart-5: oklch(0.55 0.14 40);
+  --chart-1: oklch(0.52 0.14 195);
+  --chart-2: oklch(0.58 0.14 155);
+  --chart-3: oklch(0.55 0.12 280);
+  --chart-4: oklch(0.62 0.14 85);
+  --chart-5: oklch(0.58 0.16 35);
   
   --radius: 0.625rem;
   
-  /* Sidebar - slightly darker than main bg */
-  --sidebar: oklch(0.97 0.005 280);
-  --sidebar-foreground: oklch(0.20 0 0);
-  --sidebar-primary: oklch(0.55 0.15 190);
-  --sidebar-primary-foreground: oklch(0.98 0 0);
-  --sidebar-accent: oklch(0.92 0.01 280);
-  --sidebar-accent-foreground: oklch(0.15 0 0);
-  --sidebar-border: oklch(0.88 0.005 280);
-  --sidebar-ring: oklch(0.55 0.15 190);
-  --sidebar-muted: oklch(0.55 0 0);
+  /* Sidebar - subtle warm gray */
+  --sidebar: oklch(0.985 0.002 280);
+  --sidebar-foreground: oklch(0.22 0.01 280);
+  --sidebar-primary: oklch(0.52 0.14 195);
+  --sidebar-primary-foreground: oklch(0.99 0 0);
+  --sidebar-accent: oklch(0.94 0.008 280);
+  --sidebar-accent-foreground: oklch(0.14 0.01 280);
+  --sidebar-border: oklch(0.90 0.005 280);
+  --sidebar-ring: oklch(0.52 0.14 195);
+  --sidebar-muted: oklch(0.52 0.005 280);
   
   /* Status colors */
-  --success: oklch(0.55 0.14 155);
-  --success-foreground: oklch(0.98 0 0);
-  --warning: oklch(0.65 0.14 85);
-  --warning-foreground: oklch(0.15 0 0);
+  --success: oklch(0.58 0.16 155);
+  --success-foreground: oklch(0.99 0 0);
+  --warning: oklch(0.72 0.16 75);
+  --warning-foreground: oklch(0.18 0.02 75);
   
   /* Focus ring */
-  --focus-ring: oklch(0.55 0.15 190 / 0.5);
+  --focus-ring: oklch(0.52 0.14 195 / 0.4);
 }
 
 .dark {
@@ -187,35 +187,35 @@
   }
   
   .custom-scrollbar::-webkit-scrollbar-thumb {
-    background: oklch(0.80 0.005 280);
+    background: oklch(0.82 0.005 280);
     border-radius: 4px;
     border: 2px solid transparent;
     background-clip: content-box;
   }
   
   .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-    background: oklch(0.65 0.005 280);
+    background: oklch(0.68 0.008 280);
     border: 2px solid transparent;
     background-clip: content-box;
   }
   
   /* Smooth scrollbar styling - dark mode */
   .dark .custom-scrollbar::-webkit-scrollbar-thumb {
-    background: oklch(0.30 0.005 280);
+    background: oklch(0.28 0.005 280);
   }
   
   .dark .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-    background: oklch(0.40 0.005 280);
+    background: oklch(0.38 0.008 280);
   }
   
   /* Firefox scrollbar */
   .custom-scrollbar {
     scrollbar-width: thin;
-    scrollbar-color: oklch(0.80 0.005 280) transparent;
+    scrollbar-color: oklch(0.82 0.005 280) transparent;
   }
   
   .dark .custom-scrollbar {
-    scrollbar-color: oklch(0.30 0.005 280) transparent;
+    scrollbar-color: oklch(0.28 0.005 280) transparent;
   }
   
   /* Smooth scroll behavior */
