@@ -1,7 +1,7 @@
 'use client'
 
-import { useState, useMemo, useRef, useCallback, useEffect } from 'react'
-import { motion, AnimatePresence, useSpring, useTransform } from 'framer-motion'
+import { useState, useMemo, useRef, useCallback, useEffect, memo } from 'react'
+import { motion, AnimatePresence } from 'framer-motion'
 import {
   DndContext,
   DragOverlay,
@@ -14,14 +14,12 @@ import {
   DragStartEvent,
   DragEndEvent,
   DragOverEvent,
-  DragMoveEvent,
   UniqueIdentifier,
   MeasuringStrategy,
   useDroppable,
   CollisionDetection,
   type DropAnimation,
   defaultDropAnimationSideEffects,
-  useDndMonitor,
 } from '@dnd-kit/core'
 import {
   arrayMove,
@@ -519,6 +517,20 @@ function SortableField({
   )
 }
 
+// Memoized SortableField to prevent unnecessary re-renders
+const MemoizedSortableField = memo(SortableField, (prevProps, nextProps) => {
+  // Only re-render if relevant props change
+  return (
+    prevProps.placeholder.id === nextProps.placeholder.id &&
+    prevProps.sectionId === nextProps.sectionId &&
+    prevProps.formData[prevProps.placeholder.id] === nextProps.formData[nextProps.placeholder.id] &&
+    prevProps.isDragging === nextProps.isDragging &&
+    prevProps.isSelectionMode === nextProps.isSelectionMode &&
+    prevProps.isSelected === nextProps.isSelected &&
+    prevProps.showInsertBefore === nextProps.showInsertBefore
+  )
+})
+
 // Sortable Group Component - renders a group of fields as a single draggable unit
 function SortableGroup({
   group,
@@ -715,7 +727,7 @@ function SortableGroup({
           >
             <div className="p-3 grid grid-cols-6 gap-3">
               {groupPlaceholders.map((placeholder) => (
-                <GroupField
+                <MemoizedGroupField
                   key={placeholder.id}
                   placeholder={placeholder}
                   formData={formData}
@@ -834,6 +846,16 @@ function GroupField({
     </div>
   )
 }
+
+// Memoized GroupField to prevent unnecessary re-renders
+const MemoizedGroupField = memo(GroupField, (prevProps, nextProps) => {
+  return (
+    prevProps.placeholder.id === nextProps.placeholder.id &&
+    prevProps.formData[prevProps.placeholder.id] === nextProps.formData[nextProps.placeholder.id] &&
+    prevProps.isSelectionMode === nextProps.isSelectionMode &&
+    prevProps.isSelected === nextProps.isSelected
+  )
+})
 
 // Sortable Unassigned Field Component - allows dragging and reordering unassigned fields
 function SortableUnassignedField({
@@ -1003,6 +1025,18 @@ function SortableUnassignedField({
   </motion.div>
   )
   }
+
+// Memoized SortableUnassignedField to prevent unnecessary re-renders  
+const MemoizedSortableUnassignedField = memo(SortableUnassignedField, (prevProps, nextProps) => {
+  return (
+    prevProps.placeholder.id === nextProps.placeholder.id &&
+    prevProps.formData[prevProps.placeholder.id] === nextProps.formData[nextProps.placeholder.id] &&
+    prevProps.isDragging === nextProps.isDragging &&
+    prevProps.isSelectionMode === nextProps.isSelectionMode &&
+    prevProps.isSelected === nextProps.isSelected &&
+    prevProps.index === nextProps.index
+  )
+})
   
 // Droppable area for unassigned fields section
 function DroppableUnassignedArea({ 
@@ -1306,7 +1340,7 @@ function SortableSection({
                         )
                       }
                       return (
-                        <SortableField
+                        <MemoizedSortableField
                           key={item.placeholder.id}
                           placeholder={item.placeholder}
                           sectionId={section.id}
@@ -2342,8 +2376,8 @@ export function SectionForm({
                 strategy={rectSortingStrategy}
               >
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                  {filteredUnassignedPlaceholders.map((placeholder) => (
-                    <SortableUnassignedField
+                  {filteredUnassignedPlaceholders.map((placeholder, index) => (
+                    <MemoizedSortableUnassignedField
                       key={placeholder.id}
                       placeholder={placeholder}
                       formData={formData}
@@ -2352,6 +2386,7 @@ export function SectionForm({
                       isSelectionMode={isSelectionMode}
                       isSelected={selectedFields.has(placeholder.id)}
                       onToggleSelection={handleToggleFieldSelection}
+                      index={index}
                     />
                   ))}
                 </div>

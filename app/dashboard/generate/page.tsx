@@ -320,7 +320,7 @@ function GeneratePageContent() {
                   Choose one or more templates
                 </p>
               </div>
-              <div className="max-h-[400px] overflow-auto p-4">
+              <div className="max-h-[50vh] overflow-y-auto custom-scrollbar p-4">
                 <div className="space-y-2">
                   {templates.map((template) => (
                     <div
@@ -416,7 +416,7 @@ function GeneratePageContent() {
                       </Button>
                     </div>
                   </div>
-                  <div className="max-h-[600px] overflow-y-auto overflow-x-hidden p-4">
+                  <div className="max-h-[calc(100vh-22rem)] overflow-y-auto overflow-x-hidden p-4 custom-scrollbar">
                     <SectionForm
                       sections={sections}
                       placeholders={allPlaceholders}
