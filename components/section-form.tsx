@@ -700,11 +700,11 @@ function GroupField({
           placeholder={`Enter ${placeholder.label.toLowerCase()}`}
           className={cn("h-9 text-sm", formInputClass)}
         />
-  )}
-  </motion.div>
+      )}
+    </div>
   )
-  }
-  
+}
+
 // Sortable Unassigned Field Component - allows dragging unassigned fields
 function SortableUnassignedField({
   placeholder,
