@@ -1703,6 +1703,28 @@ export function SectionForm({
     }
   }, [placeholders, sections]) // Don't include unassignedFieldOrder to avoid infinite loop
 
+  // Keyboard shortcuts for form management
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Ctrl+G or Cmd+G: Create group from selected fields
+      if ((e.ctrlKey || e.metaKey) && e.key === 'g') {
+        e.preventDefault()
+        if (selectedFields.size >= 2 && isSelectionMode) {
+          setShowGroupDialog(true)
+        }
+      }
+      
+      // Ctrl+Shift+S or Cmd+Shift+S: Create new section
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'S') {
+        e.preventDefault()
+        setShowAddSection(true)
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [selectedFields, isSelectionMode])
+
   // Filter unassigned placeholders by search query
   const filteredUnassignedPlaceholders = useMemo(() => {
     if (!searchQuery) return unassignedPlaceholders
@@ -2267,9 +2289,12 @@ export function SectionForm({
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={() => setShowAddSection(true)}>
-                <Plus className="mr-2 h-4 w-4" />
-                Add Section
+              <DropdownMenuItem onClick={() => setShowAddSection(true)} className="flex justify-between gap-8">
+                <span className="flex items-center">
+                  <Plus className="mr-2 h-4 w-4" />
+                  Add Section
+                </span>
+                <span className="text-xs text-muted-foreground ml-4">Ctrl+Shift+S</span>
               </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem onClick={handleResetToUngrouped}>
@@ -2321,13 +2346,19 @@ export function SectionForm({
               {selectedFields.size} selected
             </span>
             {selectedFields.size >= 2 && (
-              <Button
-                size="sm"
-                onClick={() => setShowGroupDialog(true)}
-              >
-                <Group className="mr-2 h-4 w-4" />
-                Create Group
-              </Button>
+              <div className="relative group">
+                <Button
+                  size="sm"
+                  onClick={() => setShowGroupDialog(true)}
+                  title="Create Group (Ctrl+G)"
+                >
+                  <Group className="mr-2 h-4 w-4" />
+                  Create Group
+                </Button>
+                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-popover text-popover-foreground text-xs rounded whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50">
+                  Ctrl+G
+                </div>
+              </div>
             )}
             {selectedFields.size > 0 && (
               <Button
