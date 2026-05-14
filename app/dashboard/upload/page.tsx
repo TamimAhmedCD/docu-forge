@@ -2,7 +2,7 @@
 
 import { useState, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Upload, FileText, Check, AlertCircle, ArrowRight } from 'lucide-react'
+import { Upload, FileText, Check, AlertCircle, ArrowRight, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useTemplates } from '@/hooks/use-templates'
 import { toast } from 'sonner'
@@ -18,7 +18,7 @@ interface UploadedFile {
 }
 
 export default function UploadPage() {
-  const { addTemplate } = useTemplates()
+  const { addTemplate, isLoading } = useTemplates()
   const [files, setFiles] = useState<UploadedFile[]>([])
   const [isDragging, setIsDragging] = useState(false)
 
@@ -104,6 +104,18 @@ export default function UploadPage() {
   const allProcessed = files.length > 0 && files.every((f) => f.status === 'success' || f.status === 'error')
   const hasSuccess = files.some((f) => f.status === 'success')
   const isProcessing = files.some((f) => f.status === 'uploading')
+
+  // Wait for database to load before rendering page
+  if (isLoading) {
+    return (
+      <div className="flex min-h-[60vh] items-center justify-center p-6">
+        <div className="text-center">
+          <Loader2 className="mx-auto h-8 w-8 animate-spin text-muted-foreground" />
+          <p className="mt-4 text-sm text-muted-foreground">Loading...</p>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="p-6 lg:p-8">
