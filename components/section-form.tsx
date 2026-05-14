@@ -49,6 +49,7 @@ import {
   Ungroup,
   CheckSquare,
   Square,
+  FolderPlus,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -89,6 +90,7 @@ import {
   movePlaceholder,
   createGroup,
   createSectionWithGroup,
+  createSectionWithFields,
   ungroupFields,
   toggleGroupExpanded,
   renameGroup,
@@ -1550,6 +1552,7 @@ export function SectionForm({
   const [isSelectionMode, setIsSelectionMode] = useState(false)
   const [selectedFields, setSelectedFields] = useState<Set<string>>(new Set())
   const [showGroupDialog, setShowGroupDialog] = useState(false)
+  const [showSectionDialog, setShowSectionDialog] = useState(false)
   const [newGroupName, setNewGroupName] = useState('')
   const [showSectionOrGroupDialog, setShowSectionOrGroupDialog] = useState(false)
   const [pendingGroupFields, setPendingGroupFields] = useState<string[]>([])
@@ -2238,6 +2241,29 @@ export function SectionForm({
     setPendingGroupFields([])
   }, [newSectionName, newGroupName, pendingGroupFields, sections, saveToHistory, onSectionsChange, onAutoGroupedChange])
 
+  // Handle creating a section with selected fields (no grouping)
+  const handleCreateSectionOnly = useCallback(() => {
+    const selectedFieldIds = Array.from(selectedFields)
+    
+    if (!newSectionName.trim() || selectedFieldIds.length < 1) return
+    
+    saveToHistory()
+    const updatedSections = createSectionWithFields(
+      sections,
+      selectedFieldIds,
+      newSectionName.trim()
+    )
+    
+    onSectionsChange(updatedSections)
+    onAutoGroupedChange(false)
+    
+    // Reset state
+    setSelectedFields(new Set())
+    setIsSelectionMode(false)
+    setShowSectionDialog(false)
+    setNewSectionName('')
+  }, [selectedFields, newSectionName, sections, saveToHistory, onSectionsChange, onAutoGroupedChange])
+
   // Handle toggling group expanded state
   const handleToggleGroup = useCallback((sectionId: string, groupId: string) => {
     onSectionsChange(toggleGroupExpanded(sections, sectionId, groupId))
@@ -2345,6 +2371,17 @@ export function SectionForm({
             <span className="text-sm text-muted-foreground">
               {selectedFields.size} selected
             </span>
+            {selectedFields.size >= 1 && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setShowSectionDialog(true)}
+                title="Create Section"
+              >
+                <FolderPlus className="mr-2 h-4 w-4" />
+                Create Section
+              </Button>
+            )}
             {selectedFields.size >= 2 && (
               <div className="relative group">
                 <Button
@@ -2621,6 +2658,62 @@ export function SectionForm({
             <Button onClick={handleCreateGroup} disabled={!newGroupName.trim()}>
               <Group className="mr-2 h-4 w-4" />
               Create Group
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Create Section Dialog */}
+      <Dialog open={showSectionDialog} onOpenChange={(open) => {
+        setShowSectionDialog(open)
+        if (!open) setNewSectionName('')
+      }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Create New Section</DialogTitle>
+            <DialogDescription>
+              Move {selectedFields.size} selected field{selectedFields.size !== 1 ? 's' : ''} to a new section.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4">
+            <Label htmlFor="section-name">Section Name</Label>
+            <Input
+              id="section-name"
+              value={newSectionName}
+              onChange={(e) => setNewSectionName(e.target.value)}
+              placeholder="e.g., Personal Information, Company Details"
+              className="mt-2"
+              autoFocus
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && newSectionName.trim()) {
+                  handleCreateSectionOnly()
+                }
+              }}
+            />
+            <div className="mt-4">
+              <Label className="text-muted-foreground text-sm">Selected Fields:</Label>
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {Array.from(selectedFields).map(fieldId => {
+                  const placeholder = placeholders.find(p => p.id === fieldId)
+                  return placeholder ? (
+                    <Badge key={fieldId} variant="secondary" className="text-xs">
+                      {placeholder.label}
+                    </Badge>
+                  ) : null
+                })}
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => {
+              setShowSectionDialog(false)
+              setNewSectionName('')
+            }}>
+              Cancel
+            </Button>
+            <Button onClick={handleCreateSectionOnly} disabled={!newSectionName.trim()}>
+              <FolderPlus className="mr-2 h-4 w-4" />
+              Create Section
             </Button>
           </DialogFooter>
         </DialogContent>
