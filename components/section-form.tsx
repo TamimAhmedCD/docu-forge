@@ -27,6 +27,7 @@ import {
   sortableKeyboardCoordinates,
   useSortable,
   verticalListSortingStrategy,
+  rectSortingStrategy,
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { restrictToVerticalAxis, restrictToWindowEdges } from '@dnd-kit/modifiers'
@@ -846,7 +847,7 @@ function DroppableUnassignedArea({
   children?: React.ReactNode
   isEmpty?: boolean
 }) {
-  const { setNodeRef, isOver } = useDroppable({
+  const { setNodeRef, isOver, active } = useDroppable({
     id: 'section-drop-unassigned',
     data: {
       type: 'section' as DragItemType,
@@ -854,13 +855,17 @@ function DroppableUnassignedArea({
     },
   })
 
+  // Check if something is being dragged from a section (not from unassigned)
+  const isDraggingFromSection = active?.data?.current?.sectionId && 
+    active.data.current.sectionId !== 'unassigned'
+
   if (isEmpty) {
     return (
       <div 
         ref={setNodeRef}
         className={cn(
-          "text-center py-10 text-muted-foreground border-2 border-dashed rounded-lg transition-all duration-200",
-          isOver ? "border-primary bg-primary/10" : "border-border"
+          "text-center py-10 text-muted-foreground border-2 border-dashed rounded-lg transition-all duration-300",
+          isOver && isDraggingFromSection ? "border-primary bg-primary/10 scale-[1.02]" : "border-border"
         )}
       >
         <p>No unassigned fields</p>
@@ -873,8 +878,8 @@ function DroppableUnassignedArea({
     <div 
       ref={setNodeRef}
       className={cn(
-        "min-h-[60px] rounded-lg transition-all duration-200",
-        isOver && "ring-2 ring-primary/50 bg-primary/5"
+        "min-h-[60px] rounded-lg transition-all duration-300",
+        isOver && isDraggingFromSection && "ring-2 ring-primary/50 bg-primary/5"
       )}
     >
       {children}
@@ -1424,6 +1429,15 @@ export function SectionForm({
       }
     }
     
+    // Handle unassigned fields - they also show as placeholder type
+    if (idStr.startsWith('unassigned-')) {
+      const placeholderId = idStr.replace('unassigned-', '')
+      return {
+        type: 'placeholder' as const,
+        placeholder: placeholders.find(p => p.id === placeholderId),
+      }
+    }
+    
     if (idStr.startsWith('group-')) {
       const groupId = idStr.replace('group-', '')
       // Find the group in sections
@@ -1723,9 +1737,44 @@ export function SectionForm({
   const handleCreateGroup = useCallback(() => {
     if (selectedFields.size < 2 || !newGroupName.trim()) return
 
+    const selectedFieldIds = Array.from(selectedFields)
+    
     // Find the section containing the first selected field
-    const firstFieldId = Array.from(selectedFields)[0]
-    const sectionId = findSectionForField(firstFieldId)
+    const firstFieldId = selectedFieldIds[0]
+    let sectionId = findSectionForField(firstFieldId)
+    
+    // Check if these are unassigned fields
+    const unassignedFieldIds = selectedFieldIds.filter(id => 
+      unassignedPlaceholders.some(p => p.id === id)
+    )
+    
+    // If all selected fields are unassigned, create a new section for them
+    if (unassignedFieldIds.length === selectedFieldIds.length) {
+      saveToHistory()
+      // Create new section with the group name and add all selected fields
+      const newSectionName = `${newGroupName.trim()} Section`
+      let updatedSections = addSection(sections, newSectionName)
+      const newSection = updatedSections[updatedSections.length - 1]
+      
+      // Add all selected fields to the new section
+      for (const fieldId of selectedFieldIds) {
+        updatedSections = addPlaceholderToSection(updatedSections, fieldId, newSection.id)
+      }
+      
+      // Now create the group within this new section
+      updatedSections = createGroup(updatedSections, newSection.id, selectedFieldIds, newGroupName.trim())
+      
+      onSectionsChange(updatedSections)
+      onAutoGroupedChange(false)
+      
+      // Reset state
+      setSelectedFields(new Set())
+      setIsSelectionMode(false)
+      setShowGroupDialog(false)
+      setNewGroupName('')
+      return
+    }
+    
     if (!sectionId) return
 
     // Get all selected fields that are in this section (must be ungrouped)
@@ -1733,7 +1782,7 @@ export function SectionForm({
     if (!section) return
 
     // Only include fields that are direct children of the section (not in groups)
-    const fieldsInSection = Array.from(selectedFields).filter(id => 
+    const fieldsInSection = selectedFieldIds.filter(id => 
       section.placeholderIds.includes(id)
     )
 
@@ -1752,7 +1801,7 @@ export function SectionForm({
     setIsSelectionMode(false)
     setShowGroupDialog(false)
     setNewGroupName('')
-  }, [selectedFields, newGroupName, sections, findSectionForField, saveToHistory, onSectionsChange, onAutoGroupedChange])
+  }, [selectedFields, newGroupName, sections, findSectionForField, saveToHistory, onSectionsChange, onAutoGroupedChange, unassignedPlaceholders])
 
   // Handle toggling group expanded state
   const handleToggleGroup = useCallback((sectionId: string, groupId: string) => {
@@ -1948,11 +1997,11 @@ export function SectionForm({
                 Drag fields to a section or drag here to unassign
               </span>
             </div>
-            <SortableContext
-              items={filteredUnassignedPlaceholders.map(p => `unassigned-${p.id}`)}
-              strategy={verticalListSortingStrategy}
-            >
-              <DroppableUnassignedArea>
+            <DroppableUnassignedArea>
+              <SortableContext
+                items={filteredUnassignedPlaceholders.map(p => `unassigned-${p.id}`)}
+                strategy={rectSortingStrategy}
+              >
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                   {filteredUnassignedPlaceholders.map((placeholder) => (
                     <SortableUnassignedField
@@ -1967,8 +2016,8 @@ export function SectionForm({
                     />
                   ))}
                 </div>
-              </DroppableUnassignedArea>
-            </SortableContext>
+              </SortableContext>
+            </DroppableUnassignedArea>
           </div>
         )}
 
