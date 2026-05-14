@@ -515,6 +515,7 @@ function SortableField({
         />
       )}
     </motion.div>
+    </>
   )
 }
 
